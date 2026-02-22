@@ -1,0 +1,260 @@
+/* =============================================
+   VOICE MODE STYLES
+   ============================================= */
+
+/* Voice toggle button (small icon in text mode) */
+.btn-icon.voice-toggle {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 150ms var(--ease-out);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon.voice-toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+/* Voice stage (hero) */
+.voice-stage {
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 20px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.98));
+  box-shadow: var(--shadow-sm);
+}
+
+.chat--voice-mode .voice-stage {
+  margin-bottom: 0;
+}
+
+.voice-stage__copy {
+  display: grid;
+  gap: 5px;
+}
+
+.voice-stage__title {
+  font-size: clamp(22px, 2.4vw, 34px);
+  line-height: 1.03;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.voice-stage__sub {
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+.voice-stage__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.voice-stage__segmented {
+  display: inline-flex;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.btn.subtle {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.btn.subtle:hover {
+  color: var(--text);
+}
+
+/* Voice record button (main button in voice mode) */
+.voice-record {
+  min-width: 170px;
+  padding: 14px 20px;
+  border-radius: 50px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+  border: none;
+  color: var(--primary-foreground);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 200ms var(--ease-out);
+  box-shadow: 0 4px 16px var(--accent-glow);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.voice-record:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px var(--accent-glow);
+}
+
+.voice-record:active:not(:disabled) {
+  transform: translateY(0);
+  background: var(--accent);
+  color: var(--primary-foreground);
+}
+
+.voice-record:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Recording state animation */
+.voice-record.recording {
+  background: linear-gradient(135deg, #1f9dff 0%, #0a84ff 100%);
+  animation: pulse-recording 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { 
+    transform: scale(1); 
+    box-shadow: 0 4px 16px rgba(10, 132, 255, 0.35);
+  }
+  50% { 
+    transform: scale(1.02); 
+    box-shadow: 0 6px 32px rgba(10, 132, 255, 0.45);
+  }
+}
+
+/* Recording indicator dot */
+.voice-record.recording::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: white;
+  animation: blink-dot 1s ease-in-out infinite;
+}
+
+@keyframes blink-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Voice mode compose area adjustments */
+.chat-compose__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.chat-compose__minimal {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+
+.voice-only-panel {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 22px 20px 28px;
+  min-height: 280px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(247, 249, 252, 0.98));
+  box-shadow: var(--shadow-sm);
+  margin-top: clamp(22px, 7vh, 88px);
+}
+
+.voice-only-panel__top {
+  width: min(640px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.voice-only-panel__provider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-only-panel__label {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.voice-only-panel__badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+}
+
+.voice-stage__segmented--provider {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.voice-only-panel__hint {
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+.voice-visualizer {
+  width: min(540px, 100%);
+  min-height: 116px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+}
+
+.voice-visualizer__bar {
+  width: clamp(8px, 1.2vw, 12px);
+  min-height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.16));
+  transition: height 110ms ease-out, background 200ms ease-out, opacity 200ms ease-out;
+  opacity: 0.6;
+}
+
+.voice-visualizer__bar.active {
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.95), rgba(48, 176, 199, 0.7));
+  opacity: 0.95;
+}
+
+/* Hide textarea when in voice mode (optional enhancement) */
+/* Uncomment if you want to hide the textarea in voice mode
+.chat-compose.voice-mode textarea {
+  display: none;
+}
+
+.chat-compose.voice-mode .field {
+  display: none;
+}
+*/

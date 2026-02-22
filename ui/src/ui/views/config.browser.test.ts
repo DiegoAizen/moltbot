@@ -11,6 +11,7 @@ describe("config view", () => {
     loading: false,
     saving: false,
     applying: false,
+    resetting: false,
     updating: false,
     connected: true,
     schema: {
@@ -33,6 +34,7 @@ describe("config view", () => {
     onReload: vi.fn(),
     onSave: vi.fn(),
     onApply: vi.fn(),
+    onReset: vi.fn(),
     onUpdate: vi.fn(),
     onSubsectionChange: vi.fn(),
   });

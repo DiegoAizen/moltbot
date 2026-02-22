@@ -10,6 +10,11 @@ export type UiSettings = {
   theme: ThemeMode;
   chatFocusMode: boolean;
   chatShowThinking: boolean;
+  profileName: string;
+  profileReady: boolean;
+  textInputVisible: boolean;
+  showAdvancedNav: boolean;
+  voiceReplyEnabled: boolean;
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   navCollapsed: boolean; // Collapsible sidebar state
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
@@ -29,6 +34,11 @@ export function loadSettings(): UiSettings {
     theme: "system",
     chatFocusMode: false,
     chatShowThinking: true,
+    profileName: "",
+    profileReady: false,
+    textInputVisible: false,
+    showAdvancedNav: false,
+    voiceReplyEnabled: true,
     splitRatio: 0.6,
     navCollapsed: false,
     navGroupsCollapsed: {},
@@ -65,6 +75,25 @@ export function loadSettings(): UiSettings {
         typeof parsed.chatShowThinking === "boolean"
           ? parsed.chatShowThinking
           : defaults.chatShowThinking,
+      profileName: typeof parsed.profileName === "string" ? parsed.profileName : defaults.profileName,
+      profileReady:
+        typeof parsed.profileReady === "boolean"
+          ? parsed.profileReady
+          : Boolean(
+              (typeof parsed.profileName === "string" ? parsed.profileName : "").trim(),
+            ),
+      textInputVisible:
+        typeof parsed.textInputVisible === "boolean"
+          ? parsed.textInputVisible
+          : defaults.textInputVisible,
+      showAdvancedNav:
+        typeof parsed.showAdvancedNav === "boolean"
+          ? parsed.showAdvancedNav
+          : defaults.showAdvancedNav,
+      voiceReplyEnabled:
+        typeof parsed.voiceReplyEnabled === "boolean"
+          ? parsed.voiceReplyEnabled
+          : defaults.voiceReplyEnabled,
       splitRatio:
         typeof parsed.splitRatio === "number" &&
         parsed.splitRatio >= 0.4 &&

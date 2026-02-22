@@ -1,5 +1,6 @@
 import type { EventLogEntry } from "./app-events.ts";
 import type { OpenClawApp } from "./app.ts";
+import { extractText } from "./chat/message-extract.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
@@ -27,6 +28,7 @@ import {
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
+import { playAssistantVoiceFromText } from "./assistant-voice.ts";
 
 type GatewayHost = {
   settings: UiSettings;
@@ -51,6 +53,8 @@ type GatewayHost = {
   assistantAgentId: string | null;
   sessionKey: string;
   chatRunId: string | null;
+  voiceMode: boolean;
+  refreshTtsProvider?: () => Promise<void>;
   refreshSessionsAfterChat: Set<string>;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
@@ -148,6 +152,7 @@ export function connectGateway(host: GatewayHost) {
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
+      void host.refreshTtsProvider?.();
     },
     onClose: ({ code, reason }) => {
       if (host.client !== client) {
@@ -228,6 +233,13 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       }
     }
     if (state === "final") {
+      const finalText = extractText(payload?.message);
+      if (typeof finalText === "string" && finalText.trim()) {
+        void playAssistantVoiceFromText(
+          (host as unknown as OpenClawApp).client ?? null,
+          finalText,
+        );
+      }
       void loadChatHistory(host as unknown as OpenClawApp);
     }
     return;

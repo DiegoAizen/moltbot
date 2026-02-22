@@ -352,7 +352,16 @@ export function handleControlUiHttpRequest(
     return true;
   }
 
-  // SPA fallback (client-side router): serve index.html for unknown paths.
+  // Never fall back to index.html for missing static assets.
+  // Returning HTML for .css/.js/.map/etc triggers strict MIME errors in browsers.
+  const hasFileExtension = path.extname(fileRel).length > 0;
+  const looksLikeAssetPath = fileRel.startsWith("assets/");
+  if (hasFileExtension || looksLikeAssetPath) {
+    respondNotFound(res);
+    return true;
+  }
+
+  // SPA fallback (client-side router): serve index.html for unknown app routes.
   const indexPath = path.join(root, "index.html");
   if (fs.existsSync(indexPath)) {
     serveIndexHtml(res, indexPath, {

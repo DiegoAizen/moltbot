@@ -362,6 +362,15 @@
     0 0 20px var(--accent-glow);
 }
 
+/* Voice button must keep strong contrast in light mode. */
+.btn.voice-record {
+  color: #111111;
+}
+
+.btn.voice-record.recording {
+  color: #111111;
+}
+
 /* Keyboard shortcut badge (shadcn style) */
 .btn-kbd {
   display: inline-flex;

@@ -1,4 +1,6 @@
 import type { GatewayRequestHandlers } from "./types.js";
+import path from "node:path";
+import { readFileSync } from "node:fs";
 import { loadConfig } from "../../config/config.js";
 import {
   OPENAI_TTS_MODELS,
@@ -18,6 +20,33 @@ import {
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import { formatForLog } from "../ws-log.js";
 
+function inferMimeTypeFromAudioPath(audioPath: string, outputFormat?: string): string {
+  const normalizedFormat = (outputFormat ?? "").toLowerCase();
+  if (normalizedFormat.includes("opus")) {
+    return "audio/ogg";
+  }
+  if (normalizedFormat.includes("pcm") || normalizedFormat.includes("wav")) {
+    return "audio/wav";
+  }
+  if (normalizedFormat.includes("webm")) {
+    return "audio/webm";
+  }
+  const ext = path.extname(audioPath).toLowerCase();
+  if (ext === ".mp3") {
+    return "audio/mpeg";
+  }
+  if (ext === ".opus" || ext === ".ogg") {
+    return "audio/ogg";
+  }
+  if (ext === ".wav") {
+    return "audio/wav";
+  }
+  if (ext === ".webm") {
+    return "audio/webm";
+  }
+  return "application/octet-stream";
+}
+
 export const ttsHandlers: GatewayRequestHandlers = {
   "tts.status": async ({ respond }) => {
     try {
@@ -33,6 +62,8 @@ export const ttsHandlers: GatewayRequestHandlers = {
         enabled: isTtsEnabled(config, prefsPath),
         auto: autoMode,
         provider,
+        elevenlabsVoiceId: config.elevenlabs.voiceId,
+        elevenlabsModelId: config.elevenlabs.modelId,
         fallbackProvider: fallbackProviders[0] ?? null,
         fallbackProviders,
         prefsPath,
@@ -81,8 +112,12 @@ export const ttsHandlers: GatewayRequestHandlers = {
       const channel = typeof params.channel === "string" ? params.channel.trim() : undefined;
       const result = await textToSpeech({ text, cfg, channel });
       if (result.success && result.audioPath) {
+        const audioBuffer = readFileSync(result.audioPath);
+        const mimeType = inferMimeTypeFromAudioPath(result.audioPath, result.outputFormat);
         respond(true, {
           audioPath: result.audioPath,
+          audioBase64: audioBuffer.toString("base64"),
+          mimeType,
           provider: result.provider,
           outputFormat: result.outputFormat,
           voiceCompatible: result.voiceCompatible,

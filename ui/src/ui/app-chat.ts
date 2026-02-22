@@ -22,6 +22,8 @@ export type ChatHost = {
   hello: GatewayHelloOk | null;
   chatAvatarUrl: string | null;
   refreshSessionsAfterChat: Set<string>;
+  voiceMode: boolean;
+  recording: boolean;
 };
 
 export const CHAT_SESSIONS_ACTIVE_MINUTES = 120;
@@ -262,5 +264,224 @@ export async function refreshChatAvatar(host: ChatHost) {
     host.chatAvatarUrl = avatarUrl || null;
   } catch {
     host.chatAvatarUrl = null;
+  }
+}
+
+// Voice recording functionality
+
+type BrowserSpeechRecognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult:
+    | ((
+        event: {
+          resultIndex?: number;
+          results: ArrayLike<
+            {
+              isFinal?: boolean;
+              [index: number]: { transcript: string } | undefined;
+              length: number;
+            }
+          >;
+        },
+      ) => void)
+    | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionCtor = new () => BrowserSpeechRecognition;
+
+let mediaRecorder: MediaRecorder | null = null;
+let audioChunks: Blob[] = [];
+let speechRecognition: BrowserSpeechRecognition | null = null;
+let speechTranscript = "";
+let speechFinalizedTranscript = "";
+let speechFinalizeTimer: number | null = null;
+let speechRestartTimer: number | null = null;
+let speechStopRequested = false;
+let lastFlushedTranscript = "";
+let lastFlushedAt = 0;
+
+function clearSpeechTimers() {
+  if (speechFinalizeTimer != null) {
+    window.clearTimeout(speechFinalizeTimer);
+    speechFinalizeTimer = null;
+  }
+  if (speechRestartTimer != null) {
+    window.clearTimeout(speechRestartTimer);
+    speechRestartTimer = null;
+  }
+}
+
+function flushRecognizedText(host: ChatHost) {
+  const finalText = (speechFinalizedTranscript || speechTranscript).trim();
+  speechTranscript = "";
+  speechFinalizedTranscript = "";
+  if (!finalText) {
+    return;
+  }
+  const now = Date.now();
+  if (finalText === lastFlushedTranscript && now - lastFlushedAt < 6000) {
+    return;
+  }
+  lastFlushedTranscript = finalText;
+  lastFlushedAt = now;
+  void handleSendChat(host, finalText);
+}
+
+function scheduleSpeechRestart(host: ChatHost, delayMs: number) {
+  if (!host.voiceMode || speechStopRequested) {
+    return;
+  }
+  if (speechRestartTimer != null) {
+    return;
+  }
+  host.recording = true;
+  speechRestartTimer = window.setTimeout(() => {
+    speechRestartTimer = null;
+    if (!host.voiceMode || speechStopRequested || speechRecognition) {
+      return;
+    }
+    host.recording = false;
+    void startVoiceRecording(host);
+  }, Math.max(300, delayMs));
+}
+
+export function toggleVoiceMode(host: ChatHost) {
+  host.voiceMode = !host.voiceMode;
+  if (host.voiceMode) {
+    void startVoiceRecording(host);
+    return;
+  }
+  stopVoiceRecording(host);
+  host.recording = false;
+}
+
+export async function startVoiceRecording(host: ChatHost) {
+  if (!host.voiceMode) {
+    host.recording = false;
+    return;
+  }
+  if (!host.connected || speechRecognition || (host.recording && speechRestartTimer == null)) {
+    return;
+  }
+
+  const speechApi = (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor })
+    .webkitSpeechRecognition;
+
+  if (speechApi) {
+    try {
+      clearSpeechTimers();
+      speechStopRequested = false;
+      speechTranscript = "";
+      speechFinalizedTranscript = "";
+      speechRecognition = new speechApi();
+      speechRecognition.lang = navigator.language || "es-ES";
+      speechRecognition.continuous = true;
+      speechRecognition.interimResults = true;
+      speechRecognition.maxAlternatives = 1;
+      speechRecognition.onresult = (event) => {
+        let interim = "";
+        let gotFinal = false;
+        const start = Math.max(0, event.resultIndex ?? 0);
+        for (let i = start; i < event.results.length; i++) {
+          const result = event.results[i];
+          const alt = result?.[0];
+          const text = alt?.transcript?.trim();
+          if (!text) {
+            continue;
+          }
+          if (result?.isFinal) {
+            speechFinalizedTranscript = speechFinalizedTranscript
+              ? `${speechFinalizedTranscript} ${text}`
+              : text;
+            gotFinal = true;
+            continue;
+          }
+          interim = `${interim} ${text}`.trim();
+        }
+        speechTranscript = (speechFinalizedTranscript || interim).trim();
+        if (gotFinal) {
+          if (speechFinalizeTimer != null) {
+            window.clearTimeout(speechFinalizeTimer);
+          }
+          speechFinalizeTimer = window.setTimeout(() => flushRecognizedText(host), 700);
+        }
+      };
+      speechRecognition.onerror = () => {
+        host.recording = false;
+        speechRecognition = null;
+        if (!host.voiceMode || speechStopRequested) {
+          speechStopRequested = false;
+          return;
+        }
+        scheduleSpeechRestart(host, 900);
+      };
+      speechRecognition.onend = () => {
+        const wasStopRequested = speechStopRequested;
+        speechStopRequested = false;
+        clearSpeechTimers();
+        speechRecognition = null;
+        flushRecognizedText(host);
+        if (host.voiceMode && !wasStopRequested) {
+          scheduleSpeechRestart(host, 450);
+          return;
+        }
+        host.recording = false;
+      };
+      speechRecognition.start();
+      host.recording = true;
+      return;
+    } catch {
+      speechRecognition = null;
+      speechTranscript = "";
+    }
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType: "audio/webm;codecs=opus",
+    });
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        audioChunks.push(e.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach((track) => track.stop());
+      audioChunks = [];
+      host.recording = false;
+    };
+
+    mediaRecorder.start();
+    host.recording = true;
+  } catch (error) {
+    console.error("Microphone access error:", error);
+    host.recording = false;
+  }
+}
+
+export function stopVoiceRecording(host: ChatHost) {
+  clearSpeechTimers();
+  speechStopRequested = true;
+  if (speechRecognition) {
+    speechRecognition.stop();
+    host.recording = false;
+    return;
+  }
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+  } else {
+    host.recording = false;
   }
 }

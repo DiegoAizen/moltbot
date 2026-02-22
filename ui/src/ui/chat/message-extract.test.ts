@@ -23,6 +23,15 @@ describe("extractTextCached", () => {
     expect(extractTextCached(message)).toBe("plain text");
     expect(extractTextCached(message)).toBe("plain text");
   });
+
+  it("strips inline tts tags from assistant text", () => {
+    const message = {
+      role: "assistant",
+      content:
+        "[[tts:provider=elevenlabs voiceId=abc]] [[tts:text]]Hola Diego[[/tts:text]] [[reply_to_current]]",
+    };
+    expect(extractTextCached(message)).toBe("Hola Diego");
+  });
 });
 
 describe("extractThinkingCached", () => {

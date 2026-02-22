@@ -11,6 +11,7 @@ export type ConfigProps = {
   loading: boolean;
   saving: boolean;
   applying: boolean;
+  resetting: boolean;
   updating: boolean;
   connected: boolean;
   schema: unknown;
@@ -31,6 +32,7 @@ export type ConfigProps = {
   onReload: () => void;
   onSave: () => void;
   onApply: () => void;
+  onReset: () => void;
   onUpdate: () => void;
 };
 
@@ -443,6 +445,7 @@ export function renderConfig(props: ConfigProps) {
     hasChanges &&
     (props.formMode === "raw" ? true : canSaveForm);
   const canUpdate = props.connected && !props.applying && !props.updating;
+  const onboardCommand = "node openclaw.mjs onboard";
 
   return html`
     <div class="config-layout">
@@ -580,6 +583,21 @@ export function renderConfig(props: ConfigProps) {
             </button>
             <button
               class="btn btn--sm"
+              ?disabled=${props.resetting || props.applying || props.saving || !props.connected}
+              @click=${() => {
+                const confirmed = window.confirm(
+                  "Reset configuration and restart setup experience? This will clear current config and profile UI preferences.",
+                );
+                if (!confirmed) {
+                  return;
+                }
+                props.onReset();
+              }}
+            >
+              ${props.resetting ? "Resetting…" : "Reset Config"}
+            </button>
+            <button
+              class="btn btn--sm"
               ?disabled=${!canUpdate}
               @click=${props.onUpdate}
             >
@@ -587,6 +605,29 @@ export function renderConfig(props: ConfigProps) {
             </button>
           </div>
         </div>
+
+        <section class="config-onboard-card">
+          <div class="config-onboard-card__title">Onboarding</div>
+          <div class="config-onboard-card__subtitle">
+            Reconfigure providers, API keys, channels and setup flow from terminal.
+          </div>
+          <div class="config-onboard-card__command">${onboardCommand}</div>
+          <div class="config-onboard-card__actions">
+            <button
+              class="btn btn--sm"
+              type="button"
+              @click=${async () => {
+                try {
+                  await navigator.clipboard.writeText(onboardCommand);
+                } catch {
+                  window.prompt("Copy command:", onboardCommand);
+                }
+              }}
+            >
+              Copy command
+            </button>
+          </div>
+        </section>
 
         <!-- Diff panel (form mode only - raw mode doesn't have granular diff) -->
         ${

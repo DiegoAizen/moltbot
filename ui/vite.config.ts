@@ -29,7 +29,9 @@ export default defineConfig(() => {
     },
     build: {
       outDir: path.resolve(here, "../dist/control-ui"),
-      emptyOutDir: true,
+      // Keep previous hashed assets so app-mode/browser cache of older index files
+      // does not break with missing CSS/JS between rapid desktop restarts.
+      emptyOutDir: false,
       sourcemap: true,
     },
     server: {

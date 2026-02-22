@@ -65,6 +65,14 @@ export type AppViewState = {
   chatThinkingLevel: string | null;
   chatQueue: ChatQueueItem[];
   chatManualRefreshInFlight: boolean;
+  voiceMode: boolean;
+  recording: boolean;
+  voicePlaybackLevel: number;
+  voicePlaybackActive: boolean;
+  greetingVisible: boolean;
+  greetingNeedsInteraction: boolean;
+  ttsProvider: "openai" | "elevenlabs" | "edge" | "unknown";
+  ttsSwitching: boolean;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
   chatNewMessagesBelow: boolean;
@@ -95,6 +103,7 @@ export type AppViewState = {
   configIssues: unknown[];
   configSaving: boolean;
   configApplying: boolean;
+  configResetting: boolean;
   updateRunning: boolean;
   applySessionKey: string;
   configSnapshot: ConfigSnapshot | null;
@@ -242,6 +251,7 @@ export type AppViewState = {
   handleExecApprovalDecision: (decision: "allow-once" | "allow-always" | "deny") => Promise<void>;
   handleGatewayUrlConfirm: () => void;
   handleGatewayUrlCancel: () => void;
+  handleResetConfiguration: () => Promise<void>;
   handleConfigLoad: () => Promise<void>;
   handleConfigSave: () => Promise<void>;
   handleConfigApply: () => Promise<void>;
@@ -273,6 +283,10 @@ export type AppViewState = {
   setChatMessage: (next: string) => void;
   handleSendChat: (messageOverride?: string, opts?: { restoreDraft?: boolean }) => Promise<void>;
   handleAbortChat: () => Promise<void>;
+  handleToggleVoiceMode: () => void;
+  handleStartRecording: () => Promise<void>;
+  handleStopRecording: () => void;
+  handleSetTtsProvider: (provider: "elevenlabs" | "edge") => Promise<void>;
   removeQueuedMessage: (id: string) => void;
   handleChatScroll: (event: Event) => void;
   resetToolStream: () => void;
@@ -282,4 +296,5 @@ export type AppViewState = {
   handleOpenSidebar: (content: string) => void;
   handleCloseSidebar: () => void;
   handleSplitRatioChange: (ratio: number) => void;
+  handleReplayGreeting: () => void;
 };

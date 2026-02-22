@@ -38,6 +38,8 @@ function createProps(overrides: Partial<ChatProps> = {}): ChatProps {
     focusMode: false,
     assistantName: "OpenClaw",
     assistantAvatar: null,
+    textInputVisible: true,
+    onToggleTextInput: () => undefined,
     onRefresh: () => undefined,
     onToggleFocusMode: () => undefined,
     onDraftChange: () => undefined,
@@ -125,12 +127,12 @@ describe("chat view", () => {
     );
 
     const stopButton = Array.from(container.querySelectorAll("button")).find(
-      (btn) => btn.textContent?.trim() === "Stop",
+      (btn) => btn.textContent?.trim() === "Detener",
     );
     expect(stopButton).not.toBeUndefined();
     stopButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onAbort).toHaveBeenCalledTimes(1);
-    expect(container.textContent).not.toContain("New session");
+    expect(container.textContent).not.toContain("Nueva sesion");
   });
 
   it("shows a new session button when aborting is unavailable", () => {
@@ -147,11 +149,11 @@ describe("chat view", () => {
     );
 
     const newSessionButton = Array.from(container.querySelectorAll("button")).find(
-      (btn) => btn.textContent?.trim() === "New session",
+      (btn) => btn.textContent?.trim() === "Nueva sesion",
     );
     expect(newSessionButton).not.toBeUndefined();
     newSessionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onNewSession).toHaveBeenCalledTimes(1);
-    expect(container.textContent).not.toContain("Stop");
+    expect(container.textContent).not.toContain("Detener");
   });
 });

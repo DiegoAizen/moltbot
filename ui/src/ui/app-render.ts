@@ -92,7 +92,10 @@ export function renderApp(state: AppViewState) {
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
   const chatDisabledReason = state.connected ? null : "Disconnected from gateway.";
   const isChat = state.tab === "chat";
-  const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
+  const hasProfileName = state.settings.profileName.trim().length > 0;
+  const profileReady = state.settings.profileReady && hasProfileName;
+  const compactShell = isChat && !state.settings.showAdvancedNav;
+  const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding || compactShell);
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const assistantAvatarUrl = resolveAssistantAvatarUrl(state);
   const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
@@ -104,9 +107,15 @@ export function renderApp(state: AppViewState) {
     state.agentsList?.defaultId ??
     state.agentsList?.agents?.[0]?.id ??
     null;
+  const navGroups = state.settings.showAdvancedNav
+    ? TAB_GROUPS
+    : [
+        { label: "Chat", tabs: ["chat"] as const },
+        { label: "Settings", tabs: ["config"] as const },
+      ];
 
   return html`
-    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}">
+    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${compactShell ? "shell--minimal" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}">
       <header class="topbar">
         <div class="topbar-left">
           <button
@@ -141,7 +150,7 @@ export function renderApp(state: AppViewState) {
         </div>
       </header>
       <aside class="nav ${state.settings.navCollapsed ? "nav--collapsed" : ""}">
-        ${TAB_GROUPS.map((group) => {
+        ${navGroups.map((group) => {
           const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
           const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
           return html`
@@ -845,6 +854,25 @@ export function renderApp(state: AppViewState) {
                 onNewSession: () => state.handleSendChat("/new", { restoreDraft: true }),
                 showNewMessages: state.chatNewMessagesBelow && !state.chatManualRefreshInFlight,
                 onScrollToBottom: () => state.scrollToBottom(),
+                // Voice mode props
+                voiceMode: state.voiceMode,
+                recording: state.recording,
+                voicePlaybackLevel: state.voicePlaybackLevel,
+                voicePlaybackActive: state.voicePlaybackActive,
+                onToggleVoiceMode: () => state.handleToggleVoiceMode(),
+                onStartRecording: () => void state.handleStartRecording(),
+                onStopRecording: () => state.handleStopRecording(),
+                ttsProvider: state.ttsProvider,
+                ttsSwitching: state.ttsSwitching,
+                onSetTtsProvider: (provider) => void state.handleSetTtsProvider(provider),
+                textInputVisible: state.settings.textInputVisible,
+                onToggleTextInput: () =>
+                  state.applySettings({
+                    ...state.settings,
+                    textInputVisible: !state.settings.textInputVisible,
+                  }),
+                displayName: state.settings.profileName,
+                onOpenConfig: () => state.setTab("config"),
                 // Sidebar props for tool output viewing
                 sidebarOpen: state.sidebarOpen,
                 sidebarContent: state.sidebarContent,
@@ -869,6 +897,7 @@ export function renderApp(state: AppViewState) {
                 loading: state.configLoading,
                 saving: state.configSaving,
                 applying: state.configApplying,
+                resetting: state.configResetting,
                 updating: state.updateRunning,
                 connected: state.connected,
                 schema: state.configSchema,
@@ -894,6 +923,7 @@ export function renderApp(state: AppViewState) {
                 onReload: () => loadConfig(state),
                 onSave: () => saveConfig(state),
                 onApply: () => applyConfig(state),
+                onReset: () => state.handleResetConfiguration(),
                 onUpdate: () => runUpdate(state),
               })
             : nothing
@@ -943,6 +973,112 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
       </main>
+      ${
+        profileReady && state.greetingVisible
+          ? html`
+            <div class="welcome-voice-overlay" role="dialog" aria-modal="true" aria-live="polite">
+              <div class="welcome-voice-card">
+                <div class="welcome-voice-title">
+                  Hola ${state.settings.profileName.trim()}, que gusto verte de nuevo.
+                </div>
+                <div class="welcome-voice-subtitle">
+                  ${state.greetingNeedsInteraction
+                    ? "Pulsa para escuchar el saludo."
+                    : "Iniciando modo voz..."}
+                </div>
+                <div class="welcome-voice-bars" aria-hidden="true">
+                  ${Array.from({ length: 8 }, (_, i) => {
+                    const wave = 0.35 + Math.abs(Math.sin(Date.now() / 280 + i * 0.9)) * 0.65;
+                    const level = Math.max(0.1, state.voicePlaybackLevel);
+                    const height = 18 + Math.round(52 * level * wave);
+                    return html`
+                      <span
+                        class="welcome-voice-bars__bar ${state.voicePlaybackActive ? "active" : ""}"
+                        style="height:${height}px"
+                      ></span>
+                    `;
+                  })}
+                </div>
+                ${
+                  state.greetingNeedsInteraction
+                    ? html`
+                      <button class="btn primary btn--sm" @click=${() => state.handleReplayGreeting()}>
+                        Escuchar saludo
+                      </button>
+                    `
+                    : nothing
+                }
+              </div>
+            </div>
+          `
+          : nothing
+      }
+      ${
+        profileReady
+          ? nothing
+          : html`
+            <div class="profile-setup-overlay" role="dialog" aria-modal="true" aria-live="polite">
+              <div class="profile-setup-card">
+                <div class="profile-setup-title">Welcome</div>
+                <div class="profile-setup-subtitle">
+                  Set your name to start a voice-first workspace.
+                </div>
+                <label class="field">
+                  <span>Your name</span>
+                  <input
+                    type="text"
+                    .value=${state.settings.profileName}
+                    placeholder="How should I call you?"
+                    @input=${(event: Event) => {
+                      const value = (event.target as HTMLInputElement).value;
+                      state.applySettings({
+                        ...state.settings,
+                        profileName: value,
+                      });
+                    }}
+                    @keydown=${(event: KeyboardEvent) => {
+                      if (event.key !== "Enter") {
+                        return;
+                      }
+                      const trimmed = state.settings.profileName.trim();
+                      if (!trimmed) {
+                        return;
+                      }
+                      state.applySettings({
+                        ...state.settings,
+                        profileName: trimmed,
+                        profileReady: true,
+                        chatFocusMode: true,
+                        textInputVisible: false,
+                      });
+                      state.setTab("chat");
+                    }}
+                  />
+                </label>
+                <button
+                  class="btn primary"
+                  ?disabled=${!state.settings.profileName.trim()}
+                  @click=${() => {
+                    const trimmed = state.settings.profileName.trim();
+                    if (!trimmed) {
+                      return;
+                    }
+                    state.applySettings({
+                      ...state.settings,
+                      profileName: trimmed,
+                      profileReady: true,
+                      chatFocusMode: true,
+                      textInputVisible: false,
+                    });
+                    state.setTab("chat");
+                  }}
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          `
+      }
       ${renderExecApprovalPrompt(state)}
       ${renderGatewayUrlConfirmation(state)}
     </div>

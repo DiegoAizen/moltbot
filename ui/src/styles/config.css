@@ -286,6 +286,43 @@
   color: var(--muted);
 }
 
+.config-onboard-card {
+  margin: 14px 22px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.config-onboard-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.config-onboard-card__subtitle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.config-onboard-card__command {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--text);
+  overflow-x: auto;
+}
+
+.config-onboard-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* Diff Panel */
 .config-diff {
   margin: 18px 22px 0;

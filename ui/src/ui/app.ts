@@ -46,6 +46,9 @@ import {
   handleAbortChat as handleAbortChatInternal,
   handleSendChat as handleSendChatInternal,
   removeQueuedMessage as removeQueuedMessageInternal,
+  toggleVoiceMode as toggleVoiceModeInternal,
+  startVoiceRecording as startVoiceRecordingInternal,
+  stopVoiceRecording as stopVoiceRecordingInternal,
 } from "./app-chat.ts";
 import { DEFAULT_CRON_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults.ts";
 import { connectGateway as connectGatewayInternal } from "./app-gateway.ts";
@@ -76,10 +79,20 @@ import {
   type ToolStreamEntry,
   type CompactionStatus,
 } from "./app-tool-stream.ts";
+import {
+  playAssistantVoiceFromText,
+  subscribeAssistantVoicePlayback,
+} from "./assistant-voice.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
+
+type TtsProviderUi = "openai" | "elevenlabs" | "edge" | "unknown";
+
+type TtsStatusResponse = {
+  provider?: string;
+};
 
 declare global {
   interface Window {
@@ -137,6 +150,14 @@ export class OpenClawApp extends LitElement {
   @state() chatQueue: ChatQueueItem[] = [];
   @state() chatAttachments: ChatAttachment[] = [];
   @state() chatManualRefreshInFlight = false;
+  @state() voiceMode = false;
+  @state() recording = false;
+  @state() voicePlaybackLevel = 0;
+  @state() voicePlaybackActive = false;
+  @state() greetingVisible = false;
+  @state() greetingNeedsInteraction = false;
+  @state() ttsProvider: TtsProviderUi = "unknown";
+  @state() ttsSwitching = false;
   // Sidebar state for tool output viewing
   @state() sidebarOpen = false;
   @state() sidebarContent: string | null = null;
@@ -168,6 +189,7 @@ export class OpenClawApp extends LitElement {
   @state() configIssues: unknown[] = [];
   @state() configSaving = false;
   @state() configApplying = false;
+  @state() configResetting = false;
   @state() updateRunning = false;
   @state() applySessionKey = this.settings.lastActiveSessionKey;
   @state() configSnapshot: ConfigSnapshot | null = null;
@@ -343,6 +365,12 @@ export class OpenClawApp extends LitElement {
   private themeMedia: MediaQueryList | null = null;
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
   private topbarObserver: ResizeObserver | null = null;
+  private stopVoicePlaybackSubscription: (() => void) | null = null;
+  private greetingTimer: number | null = null;
+  private greetedThisLaunch = false;
+  private resumeVoiceAfterPlayback = false;
+  private lastVoiceUiSampleAt = 0;
+  private lastVoiceUiLevel = 0;
 
   createRenderRoot() {
     return this;
@@ -350,6 +378,48 @@ export class OpenClawApp extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.stopVoicePlaybackSubscription = subscribeAssistantVoicePlayback((level, playing) => {
+      const wasPlaying = this.voicePlaybackActive;
+      const now = Date.now();
+      if (playing && this.recording) {
+        this.resumeVoiceAfterPlayback = this.voiceMode;
+        stopVoiceRecordingInternal(
+          this as unknown as Parameters<typeof stopVoiceRecordingInternal>[0],
+        );
+      }
+      if (!playing) {
+        if (this.voicePlaybackActive || this.voicePlaybackLevel !== 0) {
+          this.voicePlaybackLevel = 0;
+          this.voicePlaybackActive = false;
+        }
+        if (!this.voiceMode) {
+          this.resumeVoiceAfterPlayback = false;
+        }
+        if (this.resumeVoiceAfterPlayback && this.voiceMode && !this.recording) {
+          this.resumeVoiceAfterPlayback = false;
+          void startVoiceRecordingInternal(
+            this as unknown as Parameters<typeof startVoiceRecordingInternal>[0],
+          );
+        }
+      } else {
+        this.greetingNeedsInteraction = false;
+        const quantized = Math.round(Math.max(0, Math.min(1, level)) * 14) / 14;
+        if (
+          now - this.lastVoiceUiSampleAt < 80 &&
+          Math.abs(quantized - this.lastVoiceUiLevel) < 0.06 &&
+          this.voicePlaybackActive
+        ) {
+          return;
+        }
+        this.lastVoiceUiSampleAt = now;
+        this.lastVoiceUiLevel = quantized;
+        this.voicePlaybackLevel = quantized;
+        this.voicePlaybackActive = true;
+      }
+      if (this.greetingVisible && wasPlaying && !playing && this.greetedThisLaunch) {
+        this.hideGreetingOverlay();
+      }
+    });
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
   }
 
@@ -358,12 +428,119 @@ export class OpenClawApp extends LitElement {
   }
 
   disconnectedCallback() {
+    if (this.greetingTimer != null) {
+      window.clearTimeout(this.greetingTimer);
+      this.greetingTimer = null;
+    }
+    this.stopVoicePlaybackSubscription?.();
+    this.stopVoicePlaybackSubscription = null;
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }
 
   protected updated(changed: Map<PropertyKey, unknown>) {
     handleUpdated(this as unknown as Parameters<typeof handleUpdated>[0], changed);
+    if (
+      changed.has("connected") ||
+      changed.has("settings") ||
+      changed.has("onboarding") ||
+      changed.has("tab")
+    ) {
+      this.maybeShowGreeting();
+    }
+  }
+
+  private hideGreetingOverlay() {
+    if (!this.greetingVisible) {
+      return;
+    }
+    if (this.greetingTimer != null) {
+      window.clearTimeout(this.greetingTimer);
+      this.greetingTimer = null;
+    }
+    this.greetingVisible = false;
+    if (this.resumeVoiceAfterPlayback && this.voiceMode && !this.recording) {
+      this.resumeVoiceAfterPlayback = false;
+      void startVoiceRecordingInternal(
+        this as unknown as Parameters<typeof startVoiceRecordingInternal>[0],
+      );
+    }
+  }
+
+  private maybeShowGreeting() {
+    const hasProfile = this.settings.profileReady && this.settings.profileName.trim().length > 0;
+    if (!hasProfile) {
+      this.greetedThisLaunch = false;
+      this.hideGreetingOverlay();
+      return;
+    }
+    if (!this.connected || this.onboarding || this.greetedThisLaunch) {
+      return;
+    }
+    this.greetedThisLaunch = true;
+    this.greetingVisible = true;
+    this.greetingNeedsInteraction = false;
+    this.voiceMode = true;
+    if (this.tab !== "chat") {
+      this.setTab("chat");
+    }
+    const name = this.settings.profileName.trim();
+    const text = name
+      ? `Hola ${name}. Que gusto verte de nuevo.`
+      : "Hola. Que gusto verte de nuevo.";
+    this.greetingTimer = window.setTimeout(() => this.hideGreetingOverlay(), 9000);
+    void playAssistantVoiceFromText(this.client, text);
+    window.setTimeout(() => {
+      if (this.greetingVisible && !this.voicePlaybackActive) {
+        this.greetingNeedsInteraction = true;
+      }
+    }, 1300);
+    void startVoiceRecordingInternal(this as unknown as Parameters<typeof startVoiceRecordingInternal>[0]);
+  }
+
+  handleReplayGreeting() {
+    const name = this.settings.profileName.trim();
+    const text = name
+      ? `Hola ${name}. Que gusto verte de nuevo.`
+      : "Hola. Que gusto verte de nuevo.";
+    this.greetingNeedsInteraction = false;
+    void playAssistantVoiceFromText(this.client, text);
+  }
+
+  private normalizeTtsProvider(value: unknown): TtsProviderUi {
+    if (value === "openai" || value === "elevenlabs" || value === "edge") {
+      return value;
+    }
+    return "unknown";
+  }
+
+  async refreshTtsProvider() {
+    if (!this.client || !this.connected) {
+      return;
+    }
+    try {
+      const status = await this.client.request<TtsStatusResponse>("tts.status");
+      this.ttsProvider = this.normalizeTtsProvider(status?.provider);
+    } catch {
+      // Keep current value; status polling should not break chat flow.
+    }
+  }
+
+  async handleSetTtsProvider(provider: "elevenlabs" | "edge") {
+    if (!this.client || !this.connected || this.ttsSwitching) {
+      return;
+    }
+    this.ttsSwitching = true;
+    try {
+      await this.client.request("tts.setProvider", { provider });
+      this.ttsProvider = provider;
+      this.lastError = null;
+      await this.refreshTtsProvider();
+    } catch (err) {
+      this.lastError = `No se pudo cambiar el proveedor de voz: ${String(err)}`;
+    } finally {
+      this.ttsSwitching = false;
+    }
   }
 
   connect() {
@@ -451,6 +628,21 @@ export class OpenClawApp extends LitElement {
     );
   }
 
+  handleToggleVoiceMode() {
+    toggleVoiceModeInternal(this as unknown as Parameters<typeof toggleVoiceModeInternal>[0]);
+    if (!this.voiceMode) {
+      this.resumeVoiceAfterPlayback = false;
+    }
+  }
+
+  async handleStartRecording() {
+    await startVoiceRecordingInternal(this as unknown as Parameters<typeof startVoiceRecordingInternal>[0]);
+  }
+
+  handleStopRecording() {
+    stopVoiceRecordingInternal(this as unknown as Parameters<typeof stopVoiceRecordingInternal>[0]);
+  }
+
   async handleWhatsAppStart(force: boolean) {
     await handleWhatsAppStartInternal(this, force);
   }
@@ -530,6 +722,53 @@ export class OpenClawApp extends LitElement {
 
   handleGatewayUrlCancel() {
     this.pendingGatewayUrl = null;
+  }
+
+  async handleResetConfiguration() {
+    if (!this.client || !this.connected || this.configResetting) {
+      return;
+    }
+    const baseHash = this.configSnapshot?.hash;
+    if (!baseHash) {
+      this.lastError = "Config hash missing; reload and retry.";
+      return;
+    }
+
+    this.configResetting = true;
+    this.lastError = null;
+    try {
+      await this.client.request("config.apply", {
+        raw: "{}\n",
+        baseHash,
+        sessionKey: this.applySessionKey,
+      });
+      this.applySettings({
+        ...this.settings,
+        token: "",
+        sessionKey: "main",
+        lastActiveSessionKey: "main",
+        profileName: "",
+        profileReady: false,
+        textInputVisible: false,
+        showAdvancedNav: false,
+        navCollapsed: false,
+      });
+      this.greetedThisLaunch = false;
+      this.hideGreetingOverlay();
+      this.sessionKey = "main";
+      this.chatMessage = "";
+      this.chatAttachments = [];
+      this.chatQueue = [];
+      this.chatRunId = null;
+      this.chatStream = null;
+      this.chatStreamStartedAt = null;
+      this.setTab("chat");
+      window.setTimeout(() => this.connect(), 300);
+    } catch (err) {
+      this.lastError = `Reset failed: ${String(err)}`;
+    } finally {
+      this.configResetting = false;
+    }
   }
 
   // Sidebar handlers for tool output viewing

@@ -1,4 +1,4 @@
-import { html, nothing } from "lit";
+﻿import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { SessionsListResult } from "../types.ts";
@@ -57,6 +57,21 @@ export type ChatProps = {
   // Scroll control
   showNewMessages?: boolean;
   onScrollToBottom?: () => void;
+  // Voice mode
+  voiceMode?: boolean;
+  recording?: boolean;
+  voicePlaybackLevel?: number;
+  voicePlaybackActive?: boolean;
+  onToggleVoiceMode?: () => void;
+  onStartRecording?: () => void;
+  onStopRecording?: () => void;
+  ttsProvider?: "openai" | "elevenlabs" | "edge" | "unknown";
+  ttsSwitching?: boolean;
+  onSetTtsProvider?: (provider: "elevenlabs" | "edge") => void;
+  textInputVisible?: boolean;
+  onToggleTextInput?: () => void;
+  displayName?: string;
+  onOpenConfig?: () => void;
   // Event handlers
   onRefresh: () => void;
   onToggleFocusMode: () => void;
@@ -201,23 +216,29 @@ export function renderChat(props: ChatProps) {
   const hasAttachments = (props.attachments?.length ?? 0) > 0;
   const composePlaceholder = props.connected
     ? hasAttachments
-      ? "Add a message or paste more images..."
-      : "Message (↩ to send, Shift+↩ for line breaks, paste images)"
-    : "Connect to the gateway to start chatting…";
+      ? "Agrega un mensaje o pega mas imagenes..."
+      : "Mensaje (Enter para enviar, Shift+Enter para salto de linea, puedes pegar imagenes)"
+    : "Conectate al gateway para empezar a chatear...";
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+  const textInputVisible = props.textInputVisible ?? false;
+  const voiceMode = props.voiceMode ?? false;
+  const recording = props.recording ?? false;
+  const voicePlaybackLevel = props.voicePlaybackLevel ?? 0;
+  const voicePlaybackActive = props.voicePlaybackActive ?? false;
+  const ttsProvider = props.ttsProvider ?? "unknown";
+  const ttsSwitching = props.ttsSwitching ?? false;
+  const userDisplayName = (props.displayName ?? "").trim();
+  const greeting = userDisplayName
+    ? `Hola ${userDisplayName}, que gusto verte de nuevo.`
+    : "Hola, que gusto verte de nuevo.";
   const thread = html`
-    <div
-      class="chat-thread"
-      role="log"
-      aria-live="polite"
-      @scroll=${props.onChatScroll}
-    >
+    <div class="chat-thread" role="log" aria-live="polite" @scroll=${props.onChatScroll}>
       ${
         props.loading
           ? html`
-              <div class="muted">Loading chat…</div>
+              <div class="muted">Cargando chat...</div>
             `
           : nothing
       }
@@ -264,9 +285,8 @@ export function renderChat(props: ChatProps) {
   `;
 
   return html`
-    <section class="card chat">
+    <section class="card chat ${voiceMode ? "chat--voice-mode" : ""}">
       ${props.disabledReason ? html`<div class="callout">${props.disabledReason}</div>` : nothing}
-
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
 
       ${
@@ -276,8 +296,8 @@ export function renderChat(props: ChatProps) {
               class="chat-focus-exit"
               type="button"
               @click=${props.onToggleFocusMode}
-              aria-label="Exit focus mode"
-              title="Exit focus mode"
+              aria-label="Salir del modo enfoque"
+              title="Salir del modo enfoque"
             >
               ${icons.x}
             </button>
@@ -285,60 +305,132 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
 
-      <div
-        class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}"
-      >
-        <div
-          class="chat-main"
-          style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
-        >
-          ${thread}
+      <div class="voice-stage">
+        <div class="voice-stage__copy">
+          <div class="voice-stage__title">${greeting}</div>
+          <div class="voice-stage__sub">Experiencia centrada en voz. El texto queda opcional y discreto.</div>
         </div>
+        <div class="voice-stage__actions">
+          <div class="voice-stage__segmented">
+            <button class="btn btn--sm ${voiceMode ? "" : "primary"}" @click=${voiceMode ? props.onToggleVoiceMode : nothing}>
+              Chat
+            </button>
+            <button class="btn btn--sm ${voiceMode ? "primary" : ""}" @click=${voiceMode ? nothing : props.onToggleVoiceMode}>
+              Hablar
+            </button>
+          </div>
+          ${
+            voiceMode
+              ? html`
+                  <button
+                    class="btn voice-record ${recording ? "recording" : ""}"
+                    ?disabled=${!props.connected}
+                    @click=${recording ? props.onStopRecording : props.onStartRecording}
+                    title=${recording ? "Detener escucha" : "Comenzar escucha"}
+                  >
+                    ${recording ? "Escuchando" : "Comenzar escucha"}
+                  </button>
+                  <button class="btn btn--sm subtle" @click=${props.onOpenConfig}>Ajustes</button>
+                `
+              : html`
+                  <button class="btn btn--sm subtle" @click=${props.onOpenConfig}>Ajustes</button>
+                `
+          }
+        </div>
+      </div>
 
-        ${
-          sidebarOpen
-            ? html`
-              <resizable-divider
-                .splitRatio=${splitRatio}
-                @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
-              ></resizable-divider>
-              <div class="chat-sidebar">
-                ${renderMarkdownSidebar({
-                  content: props.sidebarContent ?? null,
-                  error: props.sidebarError ?? null,
-                  onClose: props.onCloseSidebar!,
-                  onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) {
-                      return;
-                    }
-                    props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
-                  },
+      ${
+        voiceMode
+          ? html`
+            <div class="voice-only-panel">
+              <div class="voice-only-panel__top">
+                <div class="voice-only-panel__provider">
+                  <span class="voice-only-panel__label">Voz</span>
+                  <span class="voice-only-panel__badge">${ttsProvider === "elevenlabs" ? "ElevenLabs" : "Edge"}</span>
+                </div>
+                <div class="voice-stage__segmented voice-stage__segmented--provider" aria-label="Proveedor de voz">
+                  <button
+                    class="btn btn--sm ${ttsProvider === "edge" ? "primary" : ""}"
+                    ?disabled=${!props.connected || ttsSwitching}
+                    @click=${() => props.onSetTtsProvider?.("edge")}
+                  >
+                    Edge
+                  </button>
+                  <button
+                    class="btn btn--sm ${ttsProvider === "elevenlabs" ? "primary" : ""}"
+                    ?disabled=${!props.connected || ttsSwitching}
+                    @click=${() => props.onSetTtsProvider?.("elevenlabs")}
+                  >
+                    ElevenLabs
+                  </button>
+                </div>
+              </div>
+              <div class="voice-visualizer" aria-hidden="true">
+                ${Array.from({ length: 14 }, (_, i) => {
+                  const wave = 0.3 + Math.abs(Math.sin(Date.now() / 230 + i * 0.8)) * 0.7;
+                  const level = Math.max(0.09, voicePlaybackLevel);
+                  const height = 20 + Math.round(72 * level * wave);
+                  return html`
+                    <span
+                      class="voice-visualizer__bar ${voicePlaybackActive ? "active" : ""}"
+                      style="height:${height}px"
+                    ></span>
+                  `;
                 })}
               </div>
-            `
-            : nothing
-        }
-      </div>
+              <div class="voice-only-panel__hint">
+                ${recording ? "Escuchando continuamente" : "Activa el microfono para empezar"}
+              </div>
+            </div>
+          `
+          : html`
+            <div class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}">
+              <div class="chat-main" style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}">
+                ${thread}
+              </div>
+              ${
+                sidebarOpen
+                  ? html`
+                    <resizable-divider
+                      .splitRatio=${splitRatio}
+                      @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
+                    ></resizable-divider>
+                    <div class="chat-sidebar">
+                      ${renderMarkdownSidebar({
+                        content: props.sidebarContent ?? null,
+                        error: props.sidebarError ?? null,
+                        onClose: props.onCloseSidebar!,
+                        onViewRawText: () => {
+                          if (!props.sidebarContent || !props.onOpenSidebar) {
+                            return;
+                          }
+                          props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
+                        },
+                      })}
+                    </div>
+                  `
+                  : nothing
+              }
+            </div>
+          `
+      }
 
       ${
         props.queue.length
           ? html`
             <div class="chat-queue" role="status" aria-live="polite">
-              <div class="chat-queue__title">Queued (${props.queue.length})</div>
+              <div class="chat-queue__title">En cola (${props.queue.length})</div>
               <div class="chat-queue__list">
                 ${props.queue.map(
                   (item) => html`
                     <div class="chat-queue__item">
                       <div class="chat-queue__text">
-                        ${
-                          item.text ||
-                          (item.attachments?.length ? `Image (${item.attachments.length})` : "")
-                        }
+                        ${item.text || (item.attachments?.length ? `Imagen (${item.attachments.length})` : "")}
                       </div>
                       <button
                         class="btn chat-queue__remove"
                         type="button"
-                        aria-label="Remove queued message"
+                        aria-label="Quitar mensaje en cola"
                         @click=${() => props.onQueueRemove(item.id)}
                       >
                         ${icons.x}
@@ -357,71 +449,77 @@ export function renderChat(props: ChatProps) {
       ${
         props.showNewMessages
           ? html`
-            <button
-              class="btn chat-new-messages"
-              type="button"
-              @click=${props.onScrollToBottom}
-            >
-              New messages ${icons.arrowDown}
+            <button class="btn chat-new-messages" type="button" @click=${props.onScrollToBottom}>
+              Mensajes nuevos ${icons.arrowDown}
             </button>
           `
           : nothing
       }
 
       <div class="chat-compose">
-        ${renderAttachmentPreview(props)}
-        <div class="chat-compose__row">
-          <label class="field chat-compose__field">
-            <span>Message</span>
-            <textarea
-              ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
-              .value=${props.draft}
-              dir=${detectTextDirection(props.draft)}
-              ?disabled=${!props.connected}
-              @keydown=${(e: KeyboardEvent) => {
-                if (e.key !== "Enter") {
-                  return;
-                }
-                if (e.isComposing || e.keyCode === 229) {
-                  return;
-                }
-                if (e.shiftKey) {
-                  return;
-                } // Allow Shift+Enter for line breaks
-                if (!props.connected) {
-                  return;
-                }
-                e.preventDefault();
-                if (canCompose) {
-                  props.onSend();
-                }
-              }}
-              @input=${(e: Event) => {
-                const target = e.target as HTMLTextAreaElement;
-                adjustTextareaHeight(target);
-                props.onDraftChange(target.value);
-              }}
-              @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
-              placeholder=${composePlaceholder}
-            ></textarea>
-          </label>
-          <div class="chat-compose__actions">
-            <button
-              class="btn"
-              ?disabled=${!props.connected || (!canAbort && props.sending)}
-              @click=${canAbort ? props.onAbort : props.onNewSession}
-            >
-              ${canAbort ? "Stop" : "New session"}
-            </button>
-            <button
-              class="btn primary"
-              ?disabled=${!props.connected}
-              @click=${props.onSend}
-            >
-              ${isBusy ? "Queue" : "Send"}<kbd class="btn-kbd">↵</kbd>
-            </button>
-          </div>
-        </div>
+        ${
+          textInputVisible && !voiceMode
+            ? html`
+                ${renderAttachmentPreview(props)}
+                <div class="chat-compose__row">
+                  <label class="field chat-compose__field">
+                    <span>Mensaje</span>
+                    <textarea
+                      ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
+                      .value=${props.draft}
+                      dir=${detectTextDirection(props.draft)}
+                      ?disabled=${!props.connected}
+                      @keydown=${(e: KeyboardEvent) => {
+                        if (e.key !== "Enter") {
+                          return;
+                        }
+                        if (e.isComposing || e.keyCode === 229) {
+                          return;
+                        }
+                        if (e.shiftKey) {
+                          return;
+                        }
+                        if (!props.connected) {
+                          return;
+                        }
+                        e.preventDefault();
+                        if (canCompose) {
+                          props.onSend();
+                        }
+                      }}
+                      @input=${(e: Event) => {
+                        const target = e.target as HTMLTextAreaElement;
+                        adjustTextareaHeight(target);
+                        props.onDraftChange(target.value);
+                      }}
+                      @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
+                      placeholder=${composePlaceholder}
+                    ></textarea>
+                  </label>
+                  <div class="chat-compose__actions">
+                    <button class="btn btn--sm" @click=${props.onToggleTextInput}>Ocultar texto</button>
+                    <button
+                      class="btn"
+                      ?disabled=${!props.connected || (!canAbort && props.sending)}
+                      @click=${canAbort ? props.onAbort : props.onNewSession}
+                    >
+                      ${canAbort ? "Detener" : "Nueva sesion"}
+                    </button>
+                    <button class="btn primary" ?disabled=${!props.connected} @click=${props.onSend}>
+                      ${isBusy ? "En cola" : "Enviar"}<kbd class="btn-kbd">↵</kbd>
+                    </button>
+                  </div>
+                </div>
+              `
+            : html`
+                <div class="chat-compose__minimal">
+                  <button class="btn btn--sm subtle" @click=${props.onToggleTextInput}>Escribir mensaje</button>
+                  <button class="btn btn--sm" @click=${props.onToggleVoiceMode}>
+                    ${voiceMode ? "Salir de voz" : "Modo voz"}
+                  </button>
+                </div>
+              `
+        }
       </div>
     </section>
   `;
@@ -562,3 +660,4 @@ function messageKey(message: unknown, index: number): string {
   }
   return `msg:${role}:${index}`;
 }
+

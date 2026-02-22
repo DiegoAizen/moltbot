@@ -250,8 +250,42 @@ function resolveModelOverridePolicy(
   };
 }
 
+function normalizeElevenLabsVoiceId(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed || !isValidVoiceId(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function normalizeElevenLabsModelId(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  // Common valid values: eleven_multilingual_v2 / eleven_turbo_v2_5 / eleven_monolingual_v1
+  if (!trimmed.startsWith("eleven_")) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 export function resolveTtsConfig(cfg: OpenClawConfig): ResolvedTtsConfig {
   const raw: TtsConfig = cfg.messages?.tts ?? {};
+  const talkVoiceId = normalizeElevenLabsVoiceId(cfg.talk?.voiceId);
+  const talkModelId = normalizeElevenLabsModelId(cfg.talk?.modelId);
+  const messageVoiceId = normalizeElevenLabsVoiceId(raw.elevenlabs?.voiceId);
+  const messageModelId = normalizeElevenLabsModelId(raw.elevenlabs?.modelId);
+  const talkApiKey =
+    typeof cfg.talk?.apiKey === "string" && cfg.talk.apiKey.trim()
+      ? cfg.talk.apiKey.trim()
+      : undefined;
   const providerSource = raw.provider ? "config" : "default";
   const edgeOutputFormat = raw.edge?.outputFormat?.trim();
   const auto = normalizeTtsAutoMode(raw.auto) ?? (raw.enabled ? "always" : "off");
@@ -263,10 +297,10 @@ export function resolveTtsConfig(cfg: OpenClawConfig): ResolvedTtsConfig {
     summaryModel: raw.summaryModel?.trim() || undefined,
     modelOverrides: resolveModelOverridePolicy(raw.modelOverrides),
     elevenlabs: {
-      apiKey: raw.elevenlabs?.apiKey,
+      apiKey: raw.elevenlabs?.apiKey ?? talkApiKey,
       baseUrl: raw.elevenlabs?.baseUrl?.trim() || DEFAULT_ELEVENLABS_BASE_URL,
-      voiceId: raw.elevenlabs?.voiceId ?? DEFAULT_ELEVENLABS_VOICE_ID,
-      modelId: raw.elevenlabs?.modelId ?? DEFAULT_ELEVENLABS_MODEL_ID,
+      voiceId: messageVoiceId ?? talkVoiceId ?? DEFAULT_ELEVENLABS_VOICE_ID,
+      modelId: messageModelId ?? talkModelId ?? DEFAULT_ELEVENLABS_MODEL_ID,
       seed: raw.elevenlabs?.seed,
       applyTextNormalization: raw.elevenlabs?.applyTextNormalization,
       languageCode: raw.elevenlabs?.languageCode,
