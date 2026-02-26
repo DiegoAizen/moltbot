@@ -5,6 +5,11 @@ type TtsConvertResponse = {
   mimeType?: string;
 };
 
+export type PreparedAssistantVoice = {
+  play: () => Promise<boolean>;
+  mimeType: string;
+};
+
 let currentAudio: HTMLAudioElement | null = null;
 let currentAudioUrl: string | null = null;
 let playbackPulseTimer: number | null = null;
@@ -62,6 +67,33 @@ function startAudioMeter(audio: HTMLAudioElement) {
   }, 90);
 }
 
+async function playAssistantVoiceBlob(blob: Blob): Promise<boolean> {
+  const objectUrl = URL.createObjectURL(blob);
+  stopCurrentAudio();
+  const audio = new Audio(objectUrl);
+  currentAudioUrl = objectUrl;
+  currentAudio = audio;
+  startAudioMeter(audio);
+  audio.onended = () => {
+    if (currentAudio === audio) {
+      stopCurrentAudio();
+    }
+  };
+  audio.onerror = () => {
+    if (currentAudio === audio) {
+      stopCurrentAudio();
+    }
+  };
+  try {
+    await audio.play();
+    return true;
+  } catch (err) {
+    console.warn("[ui][tts] Playback failed:", err);
+    stopCurrentAudio();
+    return false;
+  }
+}
+
 export function subscribeAssistantVoicePlayback(
   listener: (level: number, playing: boolean) => void,
 ): () => void {
@@ -71,18 +103,17 @@ export function subscribeAssistantVoicePlayback(
   };
 }
 
-export async function playAssistantVoiceFromText(
+export async function prepareAssistantVoiceFromText(
   client: GatewayBrowserClient | null,
   text: string,
-): Promise<void> {
+): Promise<PreparedAssistantVoice | null> {
   if (!client) {
-    return;
+    return null;
   }
   const trimmed = text.trim();
   if (!trimmed) {
-    return;
+    return null;
   }
-
   try {
     const tts = await client.request<TtsConvertResponse>("tts.convert", {
       text: trimmed,
@@ -91,30 +122,35 @@ export async function playAssistantVoiceFromText(
     const base64 = tts?.audioBase64?.trim();
     if (!base64) {
       console.warn("[ui][tts] Empty audio payload from tts.convert");
-      return;
+      return null;
     }
     const mimeType = tts?.mimeType?.trim() || "audio/mpeg";
     const bytes = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
-    const blob = new Blob([bytes], { type: mimeType });
-    const objectUrl = URL.createObjectURL(blob);
-    stopCurrentAudio();
-    const audio = new Audio(objectUrl);
-    currentAudioUrl = objectUrl;
-    currentAudio = audio;
-    startAudioMeter(audio);
-    audio.onended = () => {
-      if (currentAudio === audio) {
-        stopCurrentAudio();
-      }
+    return {
+      play: async () => playAssistantVoiceBlob(new Blob([bytes], { type: mimeType })),
+      mimeType,
     };
-    audio.onerror = () => {
-      if (currentAudio === audio) {
-        stopCurrentAudio();
-      }
-    };
-    await audio.play();
   } catch (err) {
-    console.warn("[ui][tts] Playback failed:", err);
-    stopCurrentAudio();
+    console.warn("[ui][tts] Prepare failed:", err);
+    return null;
   }
+}
+
+export async function playAssistantVoiceFromText(
+  client: GatewayBrowserClient | null,
+  text: string,
+): Promise<boolean> {
+  if (!client) {
+    return false;
+  }
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const prepared = await prepareAssistantVoiceFromText(client, trimmed);
+  if (!prepared) {
+    return false;
+  }
+  return prepared.play();
 }

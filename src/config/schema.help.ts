@@ -104,6 +104,14 @@ export const FIELD_HELP: Record<string, string> = {
   "tools.web.fetch.cacheTtlMinutes": "Cache TTL in minutes for web_fetch results.",
   "tools.web.fetch.maxRedirects": "Maximum redirects allowed for web_fetch (default: 3).",
   "tools.web.fetch.userAgent": "Override User-Agent header for web_fetch requests.",
+  "tools.music.spotify.enabled": "Enable Spotify music control/search tool.",
+  "tools.music.spotify.redirectUri":
+    "Spotify OAuth redirect URI configured in your app (e.g. http://127.0.0.1:8888/callback).",
+  "tools.music.spotify.market": "Optional market/country code for search (e.g. ES, US).",
+  "tools.music.spotify.defaultDeviceId":
+    "Optional default Spotify device ID used when playback commands omit deviceId.",
+  "tools.music.spotify.autoPlayOnOpen":
+    "When true, playback commands set `open.spotify.com` context to auto-play (default: true).",
   "tools.web.fetch.readability":
     "Use Readability to extract main content from HTML (fallbacks to basic HTML cleanup).",
   "tools.web.fetch.firecrawl.enabled": "Enable Firecrawl fallback for web_fetch (if configured).",

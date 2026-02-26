@@ -13,6 +13,8 @@ export type ConfigProps = {
   applying: boolean;
   resetting: boolean;
   updating: boolean;
+  spotifyConnecting?: boolean;
+  spotifyStatus?: string | null;
   connected: boolean;
   schema: unknown;
   schemaLoading: boolean;
@@ -34,6 +36,7 @@ export type ConfigProps = {
   onApply: () => void;
   onReset: () => void;
   onUpdate: () => void;
+  onConnectSpotify?: () => void;
 };
 
 // SVG Icons for sidebar (Lucide-style)
@@ -446,6 +449,9 @@ export function renderConfig(props: ConfigProps) {
     (props.formMode === "raw" ? true : canSaveForm);
   const canUpdate = props.connected && !props.applying && !props.updating;
   const onboardCommand = "node openclaw.mjs onboard";
+  const spotifyConnecting = props.spotifyConnecting ?? false;
+  const spotifyStatus = props.spotifyStatus ?? null;
+  const onConnectSpotify = props.onConnectSpotify ?? (() => {});
 
   return html`
     <div class="config-layout">
@@ -626,7 +632,20 @@ export function renderConfig(props: ConfigProps) {
             >
               Copy command
             </button>
+            <button
+              class="btn btn--sm primary"
+              type="button"
+              ?disabled=${!props.connected || spotifyConnecting}
+              @click=${onConnectSpotify}
+            >
+              ${spotifyConnecting ? "Conectando Spotify..." : "Conectar Spotify"}
+            </button>
           </div>
+          ${
+            spotifyStatus
+              ? html`<div class="config-onboard-card__status">${spotifyStatus}</div>`
+              : nothing
+          }
         </section>
 
         <!-- Diff panel (form mode only - raw mode doesn't have granular diff) -->

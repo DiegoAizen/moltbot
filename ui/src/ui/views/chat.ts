@@ -51,6 +51,7 @@ export type ChatProps = {
   splitRatio?: number;
   assistantName: string;
   assistantAvatar: string | null;
+  voiceOrbGifSrc?: string;
   // Image attachments
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (attachments: ChatAttachment[]) => void;
@@ -227,12 +228,7 @@ export function renderChat(props: ChatProps) {
   const recording = props.recording ?? false;
   const voicePlaybackLevel = props.voicePlaybackLevel ?? 0;
   const voicePlaybackActive = props.voicePlaybackActive ?? false;
-  const ttsProvider = props.ttsProvider ?? "unknown";
-  const ttsSwitching = props.ttsSwitching ?? false;
-  const userDisplayName = (props.displayName ?? "").trim();
-  const greeting = userDisplayName
-    ? `Hola ${userDisplayName}, que gusto verte de nuevo.`
-    : "Hola, que gusto verte de nuevo.";
+  const voiceOrbGifSrc = (props.voiceOrbGifSrc ?? "/voz.gif").trim() || "/voz.gif";
   const thread = html`
     <div class="chat-thread" role="log" aria-live="polite" @scroll=${props.onChatScroll}>
       ${
@@ -305,65 +301,12 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
 
-      <div class="voice-stage">
-        <div class="voice-stage__copy">
-          <div class="voice-stage__title">${greeting}</div>
-          <div class="voice-stage__sub">Experiencia centrada en voz. El texto queda opcional y discreto.</div>
-        </div>
-        <div class="voice-stage__actions">
-          <div class="voice-stage__segmented">
-            <button class="btn btn--sm ${voiceMode ? "" : "primary"}" @click=${voiceMode ? props.onToggleVoiceMode : nothing}>
-              Chat
-            </button>
-            <button class="btn btn--sm ${voiceMode ? "primary" : ""}" @click=${voiceMode ? nothing : props.onToggleVoiceMode}>
-              Hablar
-            </button>
-          </div>
-          ${
-            voiceMode
-              ? html`
-                  <button
-                    class="btn voice-record ${recording ? "recording" : ""}"
-                    ?disabled=${!props.connected}
-                    @click=${recording ? props.onStopRecording : props.onStartRecording}
-                    title=${recording ? "Detener escucha" : "Comenzar escucha"}
-                  >
-                    ${recording ? "Escuchando" : "Comenzar escucha"}
-                  </button>
-                  <button class="btn btn--sm subtle" @click=${props.onOpenConfig}>Ajustes</button>
-                `
-              : html`
-                  <button class="btn btn--sm subtle" @click=${props.onOpenConfig}>Ajustes</button>
-                `
-          }
-        </div>
-      </div>
-
       ${
         voiceMode
           ? html`
-            <div class="voice-only-panel">
-              <div class="voice-only-panel__top">
-                <div class="voice-only-panel__provider">
-                  <span class="voice-only-panel__label">Voz</span>
-                  <span class="voice-only-panel__badge">${ttsProvider === "elevenlabs" ? "ElevenLabs" : "Edge"}</span>
-                </div>
-                <div class="voice-stage__segmented voice-stage__segmented--provider" aria-label="Proveedor de voz">
-                  <button
-                    class="btn btn--sm ${ttsProvider === "edge" ? "primary" : ""}"
-                    ?disabled=${!props.connected || ttsSwitching}
-                    @click=${() => props.onSetTtsProvider?.("edge")}
-                  >
-                    Edge
-                  </button>
-                  <button
-                    class="btn btn--sm ${ttsProvider === "elevenlabs" ? "primary" : ""}"
-                    ?disabled=${!props.connected || ttsSwitching}
-                    @click=${() => props.onSetTtsProvider?.("elevenlabs")}
-                  >
-                    ElevenLabs
-                  </button>
-                </div>
+            <div class="voice-clean-stage">
+              <div class="voice-clean-stage__orb-wrap" aria-hidden="true">
+                <img class="voice-clean-stage__orb" src=${voiceOrbGifSrc} alt="Asistente" />
               </div>
               <div class="voice-visualizer" aria-hidden="true">
                 ${Array.from({ length: 14 }, (_, i) => {
@@ -378,9 +321,30 @@ export function renderChat(props: ChatProps) {
                   `;
                 })}
               </div>
-              <div class="voice-only-panel__hint">
+              <div class="voice-clean-stage__hint">
                 ${recording ? "Escuchando continuamente" : "Activa el microfono para empezar"}
               </div>
+              ${
+                !recording && !voicePlaybackActive
+                  ? html`
+                    <button
+                      class="voice-mic-trigger"
+                      ?disabled=${!props.connected}
+                      @click=${props.onStartRecording}
+                      title="Activar microfono"
+                      aria-label="Activar microfono"
+                    >
+                      ${icons.mic}
+                    </button>
+                  `
+                  : nothing
+              }
+              <button class="voice-corner voice-corner--left" @click=${props.onOpenConfig} title="Ajustes" aria-label="Ajustes">
+                ${icons.settings}
+              </button>
+              <button class="voice-corner voice-corner--right" @click=${props.onToggleVoiceMode} title="Ir al chat" aria-label="Ir al chat">
+                ${icons.messageSquare}
+              </button>
             </div>
           `
           : html`
@@ -456,71 +420,75 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
 
-      <div class="chat-compose">
-        ${
-          textInputVisible && !voiceMode
-            ? html`
-                ${renderAttachmentPreview(props)}
-                <div class="chat-compose__row">
-                  <label class="field chat-compose__field">
-                    <span>Mensaje</span>
-                    <textarea
-                      ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
-                      .value=${props.draft}
-                      dir=${detectTextDirection(props.draft)}
-                      ?disabled=${!props.connected}
-                      @keydown=${(e: KeyboardEvent) => {
-                        if (e.key !== "Enter") {
-                          return;
-                        }
-                        if (e.isComposing || e.keyCode === 229) {
-                          return;
-                        }
-                        if (e.shiftKey) {
-                          return;
-                        }
-                        if (!props.connected) {
-                          return;
-                        }
-                        e.preventDefault();
-                        if (canCompose) {
-                          props.onSend();
-                        }
-                      }}
-                      @input=${(e: Event) => {
-                        const target = e.target as HTMLTextAreaElement;
-                        adjustTextareaHeight(target);
-                        props.onDraftChange(target.value);
-                      }}
-                      @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
-                      placeholder=${composePlaceholder}
-                    ></textarea>
-                  </label>
-                  <div class="chat-compose__actions">
-                    <button class="btn btn--sm" @click=${props.onToggleTextInput}>Ocultar texto</button>
-                    <button
-                      class="btn"
-                      ?disabled=${!props.connected || (!canAbort && props.sending)}
-                      @click=${canAbort ? props.onAbort : props.onNewSession}
-                    >
-                      ${canAbort ? "Detener" : "Nueva sesion"}
-                    </button>
-                    <button class="btn primary" ?disabled=${!props.connected} @click=${props.onSend}>
-                      ${isBusy ? "En cola" : "Enviar"}<kbd class="btn-kbd">↵</kbd>
-                    </button>
-                  </div>
-                </div>
-              `
-            : html`
-                <div class="chat-compose__minimal">
-                  <button class="btn btn--sm subtle" @click=${props.onToggleTextInput}>Escribir mensaje</button>
-                  <button class="btn btn--sm" @click=${props.onToggleVoiceMode}>
-                    ${voiceMode ? "Salir de voz" : "Modo voz"}
-                  </button>
-                </div>
-              `
-        }
-      </div>
+      ${
+        !voiceMode
+          ? html`
+            <div class="chat-compose">
+              ${
+                textInputVisible
+                  ? html`
+                      ${renderAttachmentPreview(props)}
+                      <div class="chat-compose__row">
+                        <label class="field chat-compose__field">
+                          <span>Mensaje</span>
+                          <textarea
+                            ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
+                            .value=${props.draft}
+                            dir=${detectTextDirection(props.draft)}
+                            ?disabled=${!props.connected}
+                            @keydown=${(e: KeyboardEvent) => {
+                              if (e.key !== "Enter") {
+                                return;
+                              }
+                              if (e.isComposing || e.keyCode === 229) {
+                                return;
+                              }
+                              if (e.shiftKey) {
+                                return;
+                              }
+                              if (!props.connected) {
+                                return;
+                              }
+                              e.preventDefault();
+                              if (canCompose) {
+                                props.onSend();
+                              }
+                            }}
+                            @input=${(e: Event) => {
+                              const target = e.target as HTMLTextAreaElement;
+                              adjustTextareaHeight(target);
+                              props.onDraftChange(target.value);
+                            }}
+                            @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
+                            placeholder=${composePlaceholder}
+                          ></textarea>
+                        </label>
+                        <div class="chat-compose__actions">
+                          <button class="btn btn--sm" @click=${props.onToggleTextInput}>Ocultar texto</button>
+                          <button
+                            class="btn"
+                            ?disabled=${!props.connected || (!canAbort && props.sending)}
+                            @click=${canAbort ? props.onAbort : props.onNewSession}
+                          >
+                            ${canAbort ? "Detener" : "Nueva sesion"}
+                          </button>
+                          <button class="btn primary" ?disabled=${!props.connected} @click=${props.onSend}>
+                            ${isBusy ? "En cola" : "Enviar"}<kbd class="btn-kbd">↵</kbd>
+                          </button>
+                        </div>
+                      </div>
+                    `
+                  : html`
+                      <div class="chat-compose__minimal">
+                        <button class="btn btn--sm subtle" @click=${props.onToggleTextInput}>Escribir mensaje</button>
+                        <button class="btn btn--sm" @click=${props.onToggleVoiceMode}>Modo voz</button>
+                      </div>
+                    `
+              }
+            </div>
+          `
+          : nothing
+      }
     </section>
   `;
 }

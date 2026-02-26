@@ -303,9 +303,11 @@ let speechTranscript = "";
 let speechFinalizedTranscript = "";
 let speechFinalizeTimer: number | null = null;
 let speechRestartTimer: number | null = null;
+let speechInactivityTimer: number | null = null;
 let speechStopRequested = false;
 let lastFlushedTranscript = "";
 let lastFlushedAt = 0;
+const SPEECH_INACTIVITY_MS = 10_000;
 
 function clearSpeechTimers() {
   if (speechFinalizeTimer != null) {
@@ -316,6 +318,23 @@ function clearSpeechTimers() {
     window.clearTimeout(speechRestartTimer);
     speechRestartTimer = null;
   }
+  if (speechInactivityTimer != null) {
+    window.clearTimeout(speechInactivityTimer);
+    speechInactivityTimer = null;
+  }
+}
+
+function scheduleSpeechInactivityStop(host: ChatHost) {
+  if (speechInactivityTimer != null) {
+    window.clearTimeout(speechInactivityTimer);
+  }
+  speechInactivityTimer = window.setTimeout(() => {
+    speechInactivityTimer = null;
+    if (!host.voiceMode || !host.recording) {
+      return;
+    }
+    stopVoiceRecording(host);
+  }, SPEECH_INACTIVITY_MS);
 }
 
 function flushRecognizedText(host: ChatHost) {
@@ -406,6 +425,9 @@ export async function startVoiceRecording(host: ChatHost) {
           interim = `${interim} ${text}`.trim();
         }
         speechTranscript = (speechFinalizedTranscript || interim).trim();
+        if (speechTranscript || speechFinalizedTranscript) {
+          scheduleSpeechInactivityStop(host);
+        }
         if (gotFinal) {
           if (speechFinalizeTimer != null) {
             window.clearTimeout(speechFinalizeTimer);
@@ -436,6 +458,7 @@ export async function startVoiceRecording(host: ChatHost) {
       };
       speechRecognition.start();
       host.recording = true;
+      scheduleSpeechInactivityStop(host);
       return;
     } catch {
       speechRecognition = null;
@@ -465,6 +488,7 @@ export async function startVoiceRecording(host: ChatHost) {
 
     mediaRecorder.start();
     host.recording = true;
+    scheduleSpeechInactivityStop(host);
   } catch (error) {
     console.error("Microphone access error:", error);
     host.recording = false;

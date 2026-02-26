@@ -220,6 +220,24 @@ export const ToolsWebSchema = z
   .strict()
   .optional();
 
+export const ToolsMusicSpotifySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    redirectUri: z.string().optional(),
+    market: z.string().optional(),
+    defaultDeviceId: z.string().optional(),
+    autoPlayOnOpen: z.boolean().optional(),
+  })
+  .strict()
+  .optional();
+
+export const ToolsMusicSchema = z
+  .object({
+    spotify: ToolsMusicSpotifySchema,
+  })
+  .strict()
+  .optional();
+
 export const ToolProfileSchema = z
   .union([z.literal("minimal"), z.literal("coding"), z.literal("messaging"), z.literal("full")])
   .optional();
@@ -497,6 +515,7 @@ export const ToolsSchema = z
     deny: z.array(z.string()).optional(),
     byProvider: z.record(z.string(), ToolPolicyWithProfileSchema).optional(),
     web: ToolsWebSchema,
+    music: ToolsMusicSchema,
     media: ToolsMediaSchema,
     links: ToolsLinksSchema,
     message: z

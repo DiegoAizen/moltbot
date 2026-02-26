@@ -102,6 +102,8 @@ export function renderApp(state: AppViewState) {
   const configValue =
     state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null);
   const basePath = normalizeBasePath(state.basePath ?? "");
+  const splashGifSrc = basePath ? `${basePath}/carga.gif` : "/carga.gif";
+  const voiceOrbGifSrc = basePath ? `${basePath}/voz.gif` : "/voz.gif";
   const resolvedAgentId =
     state.agentsSelectedId ??
     state.agentsList?.defaultId ??
@@ -115,7 +117,7 @@ export function renderApp(state: AppViewState) {
       ];
 
   return html`
-    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${compactShell ? "shell--minimal" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}">
+    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${compactShell ? "shell--minimal" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""} ${state.bootSplashVisible ? "shell--booting" : ""} ${state.bootSplashVisible || state.greetingVisible ? "shell--startup-hidden" : ""}">
       <header class="topbar">
         <div class="topbar-left">
           <button
@@ -194,7 +196,7 @@ export function renderApp(state: AppViewState) {
           </div>
         </div>
       </aside>
-      <main class="content ${isChat ? "content--chat" : ""}">
+      <main class="content ${isChat ? "content--chat" : ""} ${isChat && state.voiceMode ? "content--voice-mode" : ""}">
         <section class="content-header">
           <div>
             ${state.tab === "usage" ? nothing : html`<div class="page-title">${titleForTab(state.tab)}</div>`}
@@ -883,6 +885,7 @@ export function renderApp(state: AppViewState) {
                 onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
                 assistantName: state.assistantName,
                 assistantAvatar: state.assistantAvatar,
+                voiceOrbGifSrc,
               })
             : nothing
         }
@@ -899,6 +902,8 @@ export function renderApp(state: AppViewState) {
                 applying: state.configApplying,
                 resetting: state.configResetting,
                 updating: state.updateRunning,
+                spotifyConnecting: state.spotifyConnecting,
+                spotifyStatus: state.spotifyStatus,
                 connected: state.connected,
                 schema: state.configSchema,
                 schemaLoading: state.configSchemaLoading,
@@ -925,6 +930,7 @@ export function renderApp(state: AppViewState) {
                 onApply: () => applyConfig(state),
                 onReset: () => state.handleResetConfiguration(),
                 onUpdate: () => runUpdate(state),
+                onConnectSpotify: () => void state.handleConnectSpotify(),
               })
             : nothing
         }
@@ -974,17 +980,25 @@ export function renderApp(state: AppViewState) {
         }
       </main>
       ${
-        profileReady && state.greetingVisible
+        state.bootSplashVisible
+          ? html`
+            <div class="boot-splash-overlay ${state.bootSplashClosing ? "is-leaving" : ""}" role="status" aria-live="polite">
+              <div class="boot-splash-overlay__scrim"></div>
+              <div class="boot-splash-overlay__content">
+                <img class="boot-splash-overlay__gif" src=${splashGifSrc} alt="Cargando" />
+                <div class="boot-splash-overlay__title">Asistente IA</div>
+              </div>
+            </div>
+          `
+          : nothing
+      }
+      ${
+        profileReady && state.greetingVisible && !state.bootSplashVisible
           ? html`
             <div class="welcome-voice-overlay" role="dialog" aria-modal="true" aria-live="polite">
               <div class="welcome-voice-card">
                 <div class="welcome-voice-title">
                   Hola ${state.settings.profileName.trim()}, que gusto verte de nuevo.
-                </div>
-                <div class="welcome-voice-subtitle">
-                  ${state.greetingNeedsInteraction
-                    ? "Pulsa para escuchar el saludo."
-                    : "Iniciando modo voz..."}
                 </div>
                 <div class="welcome-voice-bars" aria-hidden="true">
                   ${Array.from({ length: 8 }, (_, i) => {
@@ -999,15 +1013,6 @@ export function renderApp(state: AppViewState) {
                     `;
                   })}
                 </div>
-                ${
-                  state.greetingNeedsInteraction
-                    ? html`
-                      <button class="btn primary btn--sm" @click=${() => state.handleReplayGreeting()}>
-                        Escuchar saludo
-                      </button>
-                    `
-                    : nothing
-                }
               </div>
             </div>
           `

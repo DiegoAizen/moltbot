@@ -320,7 +320,14 @@
 
 .config-onboard-card__actions {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.config-onboard-card__status {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 /* Diff Panel */

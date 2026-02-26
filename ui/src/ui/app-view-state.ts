@@ -71,6 +71,17 @@ export type AppViewState = {
   voicePlaybackActive: boolean;
   greetingVisible: boolean;
   greetingNeedsInteraction: boolean;
+  greetingDiagnosticsVisible: boolean;
+  greetingDiagnostics: {
+    provider: "openai" | "elevenlabs" | "edge" | "unknown";
+    ttsConvert: "ok" | "fail" | "not-attempted";
+    audioPlay: "ok" | "fail" | "not-attempted";
+    fallbackSpeech: "ok" | "fail" | "not-attempted";
+    mimeType: string | null;
+    lastError: string | null;
+  };
+  bootSplashVisible: boolean;
+  bootSplashClosing: boolean;
   ttsProvider: "openai" | "elevenlabs" | "edge" | "unknown";
   ttsSwitching: boolean;
   nodesLoading: boolean;
@@ -105,6 +116,8 @@ export type AppViewState = {
   configApplying: boolean;
   configResetting: boolean;
   updateRunning: boolean;
+  spotifyConnecting: boolean;
+  spotifyStatus: string | null;
   applySessionKey: string;
   configSnapshot: ConfigSnapshot | null;
   configSchema: unknown;
@@ -287,6 +300,7 @@ export type AppViewState = {
   handleStartRecording: () => Promise<void>;
   handleStopRecording: () => void;
   handleSetTtsProvider: (provider: "elevenlabs" | "edge") => Promise<void>;
+  handleConnectSpotify: () => Promise<void>;
   removeQueuedMessage: (id: string) => void;
   handleChatScroll: (event: Event) => void;
   resetToolStream: () => void;

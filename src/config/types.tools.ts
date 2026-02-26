@@ -418,6 +418,20 @@ export type ToolsConfig = {
       };
     };
   };
+  music?: {
+    spotify?: {
+      /** Enable Spotify tool actions (default: true). */
+      enabled?: boolean;
+      /** OAuth redirect URI for auth-code flow. */
+      redirectUri?: string;
+      /** Optional market code for search (e.g. ES, US). */
+      market?: string;
+      /** Optional default device id for playback commands. */
+      defaultDeviceId?: string;
+      /** When opening a context URI, ask Spotify to start playback immediately. */
+      autoPlayOnOpen?: boolean;
+    };
+  };
   media?: MediaToolsConfig;
   links?: LinkToolsConfig;
   /** Message tool configuration. */

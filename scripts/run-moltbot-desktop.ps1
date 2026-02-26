@@ -20,7 +20,8 @@ function Test-PortOpen {
     $client.EndConnect($iar)
     $client.Close()
     return $true
-  } catch {
+  }
+  catch {
     return $false
   }
 }
@@ -32,7 +33,8 @@ function Get-PortOwnerPids {
     if ($rows) {
       return @($rows | Select-Object -ExpandProperty OwningProcess -Unique)
     }
-  } catch {
+  }
+  catch {
     # ignore and fall through
   }
   $match = netstat -ano | Select-String "127\.0\.0\.1:$TestPort\s+.*LISTENING"
@@ -43,9 +45,9 @@ function Get-PortOwnerPids {
   foreach ($line in $match) {
     $parts = ($line.ToString() -split "\s+") | Where-Object { $_ -and $_.Trim().Length -gt 0 }
     if ($parts.Length -ge 5) {
-      $pid = 0
-      if ([int]::TryParse($parts[-1], [ref]$pid) -and $pid -gt 0) {
-        $pids += $pid
+      $ownerProcessId = 0
+      if ([int]::TryParse($parts[-1], [ref]$ownerProcessId) -and $ownerProcessId -gt 0) {
+        $pids += $ownerProcessId
       }
     }
   }
@@ -70,7 +72,8 @@ if ((Test-PortOpen -TestPort $Port) -and -not $ReuseGateway) {
     foreach ($ownerPid in $pids) {
       try {
         Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue
-      } catch {
+      }
+      catch {
         # ignore kill failures; startup probe will validate.
       }
     }
@@ -81,7 +84,8 @@ if ((Test-PortOpen -TestPort $Port) -and -not $ReuseGateway) {
 if ((Test-PortOpen -TestPort $Port) -and $ReuseGateway) {
   $reusedGateway = $true
   Write-Host "Reusing existing gateway on loopback:$Port ..." -ForegroundColor Green
-} else {
+}
+else {
   Write-Host "Starting gateway on loopback:$Port ..." -ForegroundColor Cyan
   $nodeCmd = (Get-Command node -ErrorAction SilentlyContinue).Source
   if (-not $nodeCmd) {
@@ -123,16 +127,19 @@ $chromePath = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
 if (Test-Path $edgePath) {
   Write-Host "Opening desktop window with Edge app mode..." -ForegroundColor Green
   Start-Process -FilePath $edgePath -ArgumentList @("--app=$appUrl", "--new-window")
-} elseif (Test-Path $chromePath) {
+}
+elseif (Test-Path $chromePath) {
   Write-Host "Opening desktop window with Chrome app mode..." -ForegroundColor Green
   Start-Process -FilePath $chromePath -ArgumentList @("--app=$appUrl", "--new-window")
-} else {
+}
+else {
   Write-Host "No Edge/Chrome found. Open this URL manually: $appUrl" -ForegroundColor Yellow
 }
 
 if ($reusedGateway) {
   Write-Host "Gateway already running. To stop it: pnpm openclaw gateway stop" -ForegroundColor DarkGray
-} else {
+}
+else {
   Write-Host "Gateway PID: $($gatewayProc.Id)" -ForegroundColor DarkGray
   Write-Host "To stop gateway: Stop-Process -Id $($gatewayProc.Id)" -ForegroundColor DarkGray
 }

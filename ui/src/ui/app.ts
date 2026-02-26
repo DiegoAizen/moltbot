@@ -81,7 +81,9 @@ import {
 } from "./app-tool-stream.ts";
 import {
   playAssistantVoiceFromText,
+  prepareAssistantVoiceFromText,
   subscribeAssistantVoicePlayback,
+  type PreparedAssistantVoice,
 } from "./assistant-voice.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
@@ -92,6 +94,15 @@ type TtsProviderUi = "openai" | "elevenlabs" | "edge" | "unknown";
 
 type TtsStatusResponse = {
   provider?: string;
+};
+
+type GreetingDiagnostics = {
+  provider: TtsProviderUi;
+  ttsConvert: "ok" | "fail" | "not-attempted";
+  audioPlay: "ok" | "fail" | "not-attempted";
+  fallbackSpeech: "ok" | "fail" | "not-attempted";
+  mimeType: string | null;
+  lastError: string | null;
 };
 
 declare global {
@@ -156,6 +167,18 @@ export class OpenClawApp extends LitElement {
   @state() voicePlaybackActive = false;
   @state() greetingVisible = false;
   @state() greetingNeedsInteraction = false;
+  @state() greetingDiagnosticsVisible = false;
+  @state() greetingDiagnostics: GreetingDiagnostics = {
+    provider: "unknown",
+    ttsConvert: "not-attempted",
+    audioPlay: "not-attempted",
+    fallbackSpeech: "not-attempted",
+    mimeType: null,
+    lastError: null,
+  };
+  @state() bootSplashVisible =
+    this.settings.profileReady && this.settings.profileName.trim().length > 0;
+  @state() bootSplashClosing = false;
   @state() ttsProvider: TtsProviderUi = "unknown";
   @state() ttsSwitching = false;
   // Sidebar state for tool output viewing
@@ -191,6 +214,8 @@ export class OpenClawApp extends LitElement {
   @state() configApplying = false;
   @state() configResetting = false;
   @state() updateRunning = false;
+  @state() spotifyConnecting = false;
+  @state() spotifyStatus: string | null = null;
   @state() applySessionKey = this.settings.lastActiveSessionKey;
   @state() configSnapshot: ConfigSnapshot | null = null;
   @state() configSchema: unknown = null;
@@ -367,6 +392,10 @@ export class OpenClawApp extends LitElement {
   private topbarObserver: ResizeObserver | null = null;
   private stopVoicePlaybackSubscription: (() => void) | null = null;
   private greetingTimer: number | null = null;
+  private greetingStarting = false;
+  private greetingPreparedAudio: PreparedAssistantVoice | null = null;
+  private bootSequenceRunning = false;
+  private bootSequenceId = 0;
   private greetedThisLaunch = false;
   private resumeVoiceAfterPlayback = false;
   private lastVoiceUiSampleAt = 0;
@@ -416,9 +445,6 @@ export class OpenClawApp extends LitElement {
         this.voicePlaybackLevel = quantized;
         this.voicePlaybackActive = true;
       }
-      if (this.greetingVisible && wasPlaying && !playing && this.greetedThisLaunch) {
-        this.hideGreetingOverlay();
-      }
     });
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
   }
@@ -432,6 +458,9 @@ export class OpenClawApp extends LitElement {
       window.clearTimeout(this.greetingTimer);
       this.greetingTimer = null;
     }
+    this.bootSequenceId += 1;
+    this.bootSequenceRunning = false;
+    this.greetingPreparedAudio = null;
     this.stopVoicePlaybackSubscription?.();
     this.stopVoicePlaybackSubscription = null;
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
@@ -448,6 +477,71 @@ export class OpenClawApp extends LitElement {
     ) {
       this.maybeShowGreeting();
     }
+  }
+
+  private resetGreetingDiagnostics() {
+    this.greetingDiagnostics = {
+      provider: this.ttsProvider,
+      ttsConvert: "not-attempted",
+      audioPlay: "not-attempted",
+      fallbackSpeech: "not-attempted",
+      mimeType: null,
+      lastError: null,
+    };
+    this.greetingDiagnosticsVisible = false;
+  }
+
+  private updateGreetingDiagnostics(patch: Partial<GreetingDiagnostics>) {
+    this.greetingDiagnostics = {
+      ...this.greetingDiagnostics,
+      ...patch,
+    };
+  }
+
+  private async trySpeechSynthesisFallback(text: string): Promise<boolean> {
+    const synth = window.speechSynthesis;
+    if (!synth) {
+      this.updateGreetingDiagnostics({
+        fallbackSpeech: "fail",
+        lastError: "speechSynthesis no disponible",
+      });
+      return false;
+    }
+    return await new Promise<boolean>((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "es-CO";
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.onstart = () => {
+        this.updateGreetingDiagnostics({ fallbackSpeech: "ok", lastError: null });
+        this.voicePlaybackLevel = 0.18;
+        this.voicePlaybackActive = true;
+      };
+      utterance.onend = () => {
+        this.voicePlaybackLevel = 0;
+        this.voicePlaybackActive = false;
+        resolve(true);
+      };
+      utterance.onerror = () => {
+        this.voicePlaybackLevel = 0;
+        this.voicePlaybackActive = false;
+        this.updateGreetingDiagnostics({
+          fallbackSpeech: "fail",
+          lastError: "speechSynthesis falló",
+        });
+        resolve(false);
+      };
+      try {
+        synth.cancel();
+        synth.speak(utterance);
+      } catch {
+        this.updateGreetingDiagnostics({
+          fallbackSpeech: "fail",
+          lastError: "speechSynthesis lanzó excepción",
+        });
+        resolve(false);
+      }
+    });
   }
 
   private hideGreetingOverlay() {
@@ -467,44 +561,187 @@ export class OpenClawApp extends LitElement {
     }
   }
 
+  private showBootSplash() {
+    this.greetingVisible = false;
+    this.greetingNeedsInteraction = false;
+    this.resetGreetingDiagnostics();
+    this.bootSplashVisible = true;
+    this.bootSplashClosing = false;
+  }
+
+  private async wait(ms: number): Promise<void> {
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  private async preloadGreetingAudio(text: string): Promise<boolean> {
+    if (!this.client) {
+      this.updateGreetingDiagnostics({
+        ttsConvert: "fail",
+        lastError: "Gateway client no conectado",
+      });
+      return false;
+    }
+    // Force Edge for startup greeting reliability in desktop app mode.
+    try {
+      await this.client.request("tts.setProvider", { provider: "edge" });
+      this.ttsProvider = "edge";
+    } catch {
+      // Keep current provider if setProvider is unavailable.
+    }
+    this.updateGreetingDiagnostics({ provider: this.ttsProvider });
+    this.greetingPreparedAudio = await prepareAssistantVoiceFromText(this.client, text);
+    const prepared = Boolean(this.greetingPreparedAudio);
+    this.updateGreetingDiagnostics({
+      ttsConvert: prepared ? "ok" : "fail",
+      mimeType: this.greetingPreparedAudio?.mimeType ?? null,
+      lastError: prepared ? null : "tts.convert devolvió audio vacío o inválido",
+    });
+    return prepared;
+  }
+
+  private async runBootGreetingSequence() {
+    if (this.bootSequenceRunning || this.greetedThisLaunch) {
+      return;
+    }
+    const hasProfile = this.settings.profileReady && this.settings.profileName.trim().length > 0;
+    if (!hasProfile || !this.connected || this.onboarding) {
+      return;
+    }
+
+    this.bootSequenceRunning = true;
+    const sequenceId = ++this.bootSequenceId;
+    this.greetingStarting = true;
+    this.showBootSplash();
+
+    const name = this.settings.profileName.trim();
+    const text = name
+      ? `Hola ${name}. Que gusto verte de nuevo.`
+      : "Hola. Que gusto verte de nuevo.";
+
+    // Phase 1: show loading splash for 6 seconds.
+    await this.wait(6000);
+    if (sequenceId !== this.bootSequenceId || !this.connected) {
+      this.bootSequenceRunning = false;
+      this.greetingStarting = false;
+      return;
+    }
+
+    // Phase 2: keep splash visible until greeting audio is prepared.
+    this.greetingPreparedAudio = null;
+    await this.preloadGreetingAudio(text);
+    if (sequenceId !== this.bootSequenceId || !this.connected) {
+      this.bootSequenceRunning = false;
+      this.greetingStarting = false;
+      return;
+    }
+
+    this.bootSplashClosing = true;
+    await this.wait(520);
+    if (sequenceId !== this.bootSequenceId || !this.connected) {
+      this.bootSequenceRunning = false;
+      this.greetingStarting = false;
+      return;
+    }
+    this.bootSplashVisible = false;
+    this.bootSplashClosing = false;
+
+    this.greetingVisible = true;
+    this.greetingNeedsInteraction = false;
+
+    let played = false;
+    const preparedGreetingAudio = this.greetingPreparedAudio as PreparedAssistantVoice | null;
+    if (preparedGreetingAudio) {
+      played = await preparedGreetingAudio.play();
+      this.updateGreetingDiagnostics({ audioPlay: played ? "ok" : "fail" });
+    } else {
+      played = await playAssistantVoiceFromText(this.client, text);
+      this.updateGreetingDiagnostics({ audioPlay: played ? "ok" : "fail" });
+    }
+    if (!played) {
+      // Retry once after a short delay in case audio subsystem needs an extra tick.
+      await this.wait(320);
+      played = await playAssistantVoiceFromText(this.client, text);
+      this.updateGreetingDiagnostics({ audioPlay: played ? "ok" : "fail" });
+    }
+    if (!played) {
+      const fallbackPlayed = await this.trySpeechSynthesisFallback(text);
+      played = fallbackPlayed;
+      this.greetingNeedsInteraction = !fallbackPlayed;
+      this.greetingDiagnosticsVisible = true;
+    } else {
+      this.greetingNeedsInteraction = false;
+      this.greetingDiagnosticsVisible = false;
+    }
+
+    await this.wait(played ? 4200 : 2600);
+    if (sequenceId !== this.bootSequenceId) {
+      this.bootSequenceRunning = false;
+      this.greetingStarting = false;
+      return;
+    }
+    this.hideGreetingOverlay();
+    this.voiceMode = true;
+    if (this.tab !== "chat") {
+      this.setTab("chat");
+    }
+    void startVoiceRecordingInternal(this as unknown as Parameters<typeof startVoiceRecordingInternal>[0]);
+    this.greetedThisLaunch = true;
+    this.bootSequenceRunning = false;
+    this.greetingStarting = false;
+  }
+
   private maybeShowGreeting() {
     const hasProfile = this.settings.profileReady && this.settings.profileName.trim().length > 0;
     if (!hasProfile) {
       this.greetedThisLaunch = false;
+      this.greetingStarting = false;
+      this.bootSequenceRunning = false;
+      this.bootSequenceId += 1;
+      this.greetingPreparedAudio = null;
+      this.bootSplashVisible = false;
+      this.bootSplashClosing = false;
       this.hideGreetingOverlay();
       return;
     }
     if (!this.connected || this.onboarding || this.greetedThisLaunch) {
       return;
     }
-    this.greetedThisLaunch = true;
-    this.greetingVisible = true;
-    this.greetingNeedsInteraction = false;
-    this.voiceMode = true;
-    if (this.tab !== "chat") {
-      this.setTab("chat");
+    void this.runBootGreetingSequence();
+  }
+
+  handleReplayGreeting() {
+    const prepared = this.greetingPreparedAudio;
+    if (prepared) {
+      this.greetingNeedsInteraction = false;
+      this.greetingDiagnosticsVisible = false;
+      this.updateGreetingDiagnostics({
+        ttsConvert: "ok",
+        mimeType: prepared.mimeType,
+        provider: this.ttsProvider,
+      });
+      void prepared.play().then((ok) => {
+        this.updateGreetingDiagnostics({ audioPlay: ok ? "ok" : "fail" });
+        if (!ok && this.greetingVisible) {
+          this.greetingNeedsInteraction = true;
+          this.greetingDiagnosticsVisible = true;
+        }
+      });
+      return;
     }
     const name = this.settings.profileName.trim();
     const text = name
       ? `Hola ${name}. Que gusto verte de nuevo.`
       : "Hola. Que gusto verte de nuevo.";
-    this.greetingTimer = window.setTimeout(() => this.hideGreetingOverlay(), 9000);
-    void playAssistantVoiceFromText(this.client, text);
-    window.setTimeout(() => {
-      if (this.greetingVisible && !this.voicePlaybackActive) {
-        this.greetingNeedsInteraction = true;
-      }
-    }, 1300);
-    void startVoiceRecordingInternal(this as unknown as Parameters<typeof startVoiceRecordingInternal>[0]);
-  }
-
-  handleReplayGreeting() {
-    const name = this.settings.profileName.trim();
-    const text = name
-      ? `Hola ${name}. Que gusto verte de nuevo.`
-      : "Hola. Que gusto verte de nuevo.";
     this.greetingNeedsInteraction = false;
-    void playAssistantVoiceFromText(this.client, text);
+    void playAssistantVoiceFromText(this.client, text).then((ok) => {
+      this.updateGreetingDiagnostics({ audioPlay: ok ? "ok" : "fail", provider: this.ttsProvider });
+      if (!ok) {
+        this.greetingNeedsInteraction = true;
+        this.greetingDiagnosticsVisible = true;
+      }
+    });
   }
 
   private normalizeTtsProvider(value: unknown): TtsProviderUi {
@@ -520,20 +757,27 @@ export class OpenClawApp extends LitElement {
     }
     try {
       const status = await this.client.request<TtsStatusResponse>("tts.status");
-      this.ttsProvider = this.normalizeTtsProvider(status?.provider);
+      const provider = this.normalizeTtsProvider(status?.provider);
+      if (provider !== "edge") {
+        await this.client.request("tts.setProvider", { provider: "edge" });
+        this.ttsProvider = "edge";
+        return;
+      }
+      this.ttsProvider = provider;
     } catch {
       // Keep current value; status polling should not break chat flow.
     }
   }
 
-  async handleSetTtsProvider(provider: "elevenlabs" | "edge") {
+  async handleSetTtsProvider(_provider: "elevenlabs" | "edge") {
     if (!this.client || !this.connected || this.ttsSwitching) {
       return;
     }
     this.ttsSwitching = true;
     try {
-      await this.client.request("tts.setProvider", { provider });
-      this.ttsProvider = provider;
+      const forcedProvider = "edge";
+      await this.client.request("tts.setProvider", { provider: forcedProvider });
+      this.ttsProvider = forcedProvider;
       this.lastError = null;
       await this.refreshTtsProvider();
     } catch (err) {
@@ -768,6 +1012,37 @@ export class OpenClawApp extends LitElement {
       this.lastError = `Reset failed: ${String(err)}`;
     } finally {
       this.configResetting = false;
+    }
+  }
+
+  async handleConnectSpotify() {
+    if (!this.connected || this.spotifyConnecting || !this.client) {
+      return;
+    }
+    this.spotifyConnecting = true;
+    this.spotifyStatus = "Iniciando conexión de Spotify...";
+    this.lastError = null;
+    try {
+      const result = await this.client.request<{
+        ok?: boolean;
+        message?: string;
+        requiresConnection?: boolean;
+        connectUrl?: string | null;
+      }>("spotify.connect", {
+        sessionKey: this.sessionKey,
+      });
+      const baseMessage = result?.message?.trim() || "Listo, Spotify conectado.";
+      this.spotifyStatus = result?.connectUrl ? `${baseMessage} ${result.connectUrl}` : baseMessage;
+    } catch (err) {
+      const raw = String(err);
+      const message =
+        raw.toLowerCase().includes("unauthorized")
+          ? "Sin autorización del gateway. Revisa token/password en Settings."
+          : `Conexión Spotify falló: ${raw}`;
+      this.spotifyStatus = message;
+      this.lastError = message;
+    } finally {
+      this.spotifyConnecting = false;
     }
   }
 

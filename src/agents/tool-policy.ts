@@ -34,7 +34,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   // Automation + infra
   "group:automation": ["cron", "gateway"],
   // Messaging surface
-  "group:messaging": ["message"],
+  "group:messaging": ["message", "spotify"],
   // Nodes + device tools
   "group:nodes": ["nodes"],
   // All OpenClaw native tools (excludes provider plugins).
@@ -44,6 +44,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
     "nodes",
     "cron",
     "message",
+    "spotify",
     "gateway",
     "agents_list",
     "sessions_list",
